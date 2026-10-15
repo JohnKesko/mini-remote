@@ -2,7 +2,10 @@
 
 A free, simple app for your Mac that shows your Raspberry Pi's screen and lets you control it with your own mouse and keyboard.
 
-![Saved connections](docs/screenshots/saved-connections.png)
+<p>
+  <img src="docs/screenshots/saved-connections.png" alt="Mini Remote in light mode" width="49%">
+  <img src="docs/screenshots/saved-connections-dark.png" alt="Mini Remote in dark mode" width="49%">
+</p>
 
 ## What it can do
 
@@ -116,8 +119,6 @@ Your Pi must be reachable from the internet for this, for example through a VPN 
 Choose light or dark mode, how the Mac's keys work on the Pi, clipboard sharing, picture quality, and more.
 
 ![Settings](docs/screenshots/settings.png)
-
-![Dark mode](docs/screenshots/saved-connections-dark.png)
 
 ## If something doesn't work
 
