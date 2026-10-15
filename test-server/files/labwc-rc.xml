@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<labwc_config>
+  <!-- Where the demo windows appear on the 1920x1080 screen. -->
+  <windowRules>
+    <windowRule identifier="testpi-top"><action name="MoveTo" x="40" y="40"/></windowRule>
+    <windowRule identifier="testpi-clock"><action name="MoveTo" x="1000" y="40"/></windowRule>
+    <windowRule identifier="testpi-rainbow"><action name="MoveTo" x="1000" y="420"/></windowRule>
+    <windowRule identifier="org.xfce.mousepad"><action name="MoveTo" x="40" y="680"/><action name="ResizeTo" width="900" height="340"/></windowRule>
+    <windowRule identifier="mousepad"><action name="MoveTo" x="40" y="680"/><action name="ResizeTo" width="900" height="340"/></windowRule>
+  </windowRules>
+</labwc_config>

@@ -1,0 +1,18 @@
+[package]
+name = "mini-remote-ssh"
+description = "SSH tunnel and file transfer for the Mini Remote app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "ssh"
+
+[dependencies]
+tokio.workspace = true
+thiserror.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+# The `ring` crypto backend builds without cmake (the default one may need it).
+russh = { version = "0.64", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = "3"

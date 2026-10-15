@@ -1,0 +1,3 @@
+# Lets wayvnc check the Linux user name and password (same as a real Pi).
+@include common-auth
+@include common-account

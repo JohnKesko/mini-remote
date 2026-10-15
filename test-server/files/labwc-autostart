@@ -1,0 +1,21 @@
+# Run by labwc when the desktop is up (WAYLAND_DISPLAY is already set).
+
+# 1920x1080 virtual screen (the headless backend starts smaller).
+OUT=$(wlr-randr | awk 'NR==1 {print $1}')
+wlr-randr --output "$OUT" --custom-mode 1920x1080@60
+
+swaybg -i /usr/share/testpi/wallpaper.png -m fill >/dev/null 2>&1 &
+
+# Live updating windows so there is always something changing on screen.
+foot --app-id testpi-top --title "top (live)" -w 900x560 -e top -d 1 &
+foot --app-id testpi-clock --title "clock" -w 700x300 -e /opt/testpi/clock.sh &
+foot --app-id testpi-rainbow --title "moving colours" -w 800x340 -e /opt/testpi/rainbow.sh &
+
+# A text editor for typing and clipboard tests.
+mousepad /home/pi/Documents/notes.txt &
+
+# Two wayvnc servers against this one desktop (each with its own control socket).
+# (Port 5901 is a separate Xvnc desktop, see xvnc-session.sh.)
+sleep 1
+/opt/testpi/run-wayvnc.sh /etc/testpi/wayvnc-5900.conf 5900 &
+/opt/testpi/run-wayvnc.sh /etc/testpi/wayvnc-5902.conf 5902 &

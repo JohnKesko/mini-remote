@@ -1,0 +1,38 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/codec",
+    "crates/rfb",
+    "crates/ssh",
+    "crates/discovery",
+    "crates/app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+
+[workspace.dependencies]
+mini-remote-codec = { path = "crates/codec" }
+mini-remote-rfb = { path = "crates/rfb" }
+mini-remote-ssh = { path = "crates/ssh" }
+mini-remote-discovery = { path = "crates/discovery" }
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+log = "0.4"
+parking_lot = "0.12"
+serde = { version = "1", features = ["derive"] }
+
+# Picture decoding and encryption are slow without optimisation, so speed up
+# all libraries even in development builds.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev.package.mini-remote-codec]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

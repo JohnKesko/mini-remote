@@ -1,0 +1,6 @@
+# Password login and SFTP on, no root login.
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+PermitRootLogin no
+UsePAM yes
+Subsystem sftp internal-sftp

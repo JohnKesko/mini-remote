@@ -1,0 +1,40 @@
+[package]
+name = "mini-remote"
+description = "Mini Remote: a free, modern way to see and control a Raspberry Pi screen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mini-remote"
+path = "src/main.rs"
+
+[dependencies]
+mini-remote-rfb.workspace = true
+mini-remote-ssh.workspace = true
+mini-remote-discovery.workspace = true
+tokio.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json = "1"
+
+# Window, input and drawing. egui-winit and egui-wgpu re-export the matching
+# winit and wgpu versions, so those are not listed separately.
+egui = "0.36"
+egui-winit = { version = "0.36", default-features = false, features = ["clipboard", "links", "wayland", "x11"] }
+egui-wgpu = { version = "0.36", features = ["winit"] }
+egui-phosphor = "0.14"
+pollster = "1"
+
+# Local clipboard watching, saved files and pictures.
+arboard = { version = "3", default-features = false }
+directories = "6"
+image = { version = "0.25", default-features = false, features = ["png"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Passwords are kept in the macOS Keychain.
+keyring = { version = "3", features = ["apple-native"] }
+# The system "choose files" window.
+rfd = { version = "0.17", default-features = false }
