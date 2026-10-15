@@ -198,10 +198,10 @@ fn choose(types: &[u8], allow_unencrypted: bool) -> Result<u8, SessionError> {
                 DisconnectKind::NeedsUnencrypted,
                 if t == SEC_VNC {
                     "This computer only offers the classic VNC password, which does not encrypt the connection. \
-                     Turn on \"Allow unencrypted connection\" for this computer to connect anyway (fine on a home network)."
+                     Turn on \"Allow unencrypted login\" for this computer to connect anyway (fine on a home network)."
                 } else {
                     "This computer allows anyone to connect without a password and without encryption. \
-                     Turn on \"Allow unencrypted connection\" for this computer to connect anyway."
+                     Turn on \"Allow unencrypted login\" for this computer to connect anyway."
                 },
             ));
         }
@@ -368,7 +368,7 @@ async fn vencrypt(mut stream: BoxedStream, ui: &mut Prompter<'_>) -> Result<(Box
         if subtypes.contains(&VENCRYPT_PLAIN) {
             return Err(SessionError::new(
                 DisconnectKind::NeedsUnencrypted,
-                "This computer only offers an unencrypted login. Turn on \"Allow unencrypted connection\" to connect anyway.",
+                "This computer only offers an unencrypted login. Turn on \"Allow unencrypted login\" to connect anyway.",
             ));
         }
         return Err(SessionError::new(
