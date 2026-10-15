@@ -151,6 +151,8 @@ pub struct App {
     pub(crate) title_bar: f32,
     /// Debug builds only: things to open automatically, for checking screens.
     debug_open: Vec<String>,
+    /// Debug builds only: press the toolbar's Disconnect button at this time.
+    pub(crate) debug_disconnect_at: Option<Instant>,
 }
 
 /// Build the environment a session needs from the app's fields.
@@ -214,6 +216,7 @@ impl App {
             title: String::new(),
             title_bar: 0.0,
             debug_open: Vec::new(),
+            debug_disconnect_at: None,
         };
         app.requests.push(WindowRequest::Theme(Some(appearance)));
         app.debug_startup();
@@ -325,7 +328,17 @@ impl App {
         }
     }
 
+    /// Disconnect a session. The tab itself is removed at the start of the
+    /// next frame, because the code drawing it may still be running (removing
+    /// it right away made the next drawing step use a tab that was gone).
     pub fn close_tab(&mut self, id: u64) {
+        if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
+            tab.close();
+            self.ctx.request_repaint();
+        }
+    }
+
+    fn remove_tab(&mut self, id: u64) {
         let Some(index) = self.tabs.iter().position(|t| t.id == id) else { return };
         self.save_thumbnail(index, false);
         let mut tab = self.tabs.remove(index);
@@ -789,7 +802,7 @@ impl App {
         // Tabs whose session ended on purpose go away.
         let closed: Vec<u64> = self.tabs.iter().filter(|t| t.is_closed()).map(|t| t.id).collect();
         for id in closed {
-            self.close_tab(id);
+            self.remove_tab(id);
         }
 
         // File panels.
@@ -907,6 +920,9 @@ impl App {
                         Some(("drop", path)) => self.drop_files(index, vec![PathBuf::from(path)]),
                         _ if item == "files" => self.toggle_files(index),
                         _ if item == "info" => self.tabs[index].info_open = true,
+                        _ if item == "disconnect" => {
+                            self.debug_disconnect_at = Some(Instant::now() + Duration::from_secs(2));
+                        }
                         _ => {}
                     }
                 }

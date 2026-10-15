@@ -50,8 +50,17 @@ pub fn show(app: &mut App, ui: &mut Ui, index: usize, area: Rect) {
     let ctx = ui.ctx().clone();
     let p = Palette::of(&ctx);
     let fullscreen = app.fullscreen;
+    // Debug builds: `MINI_REMOTE_DEBUG_OPEN=...,disconnect` presses Disconnect
+    // here, in the middle of drawing, exactly like a real click.
+    let debug_press = cfg!(debug_assertions) && app.debug_disconnect_at.is_some_and(|t| Instant::now() >= t);
+    if debug_press {
+        app.debug_disconnect_at = None;
+    }
     let tab = &mut app.tabs[index];
     let now = Instant::now();
+    if debug_press {
+        tab.toolbar_seen = Some(now);
+    }
     let pointer = ctx.input(|i| i.pointer.latest_pos());
     let rect_id = Id::new(("toolbar-rect", tab.id));
     let last_rect: Option<Rect> = ctx.data(|d| d.get_temp(rect_id));
@@ -178,6 +187,9 @@ pub fn show(app: &mut App, ui: &mut Ui, index: usize, area: Rect) {
         info_panel(app, &ctx, index, bar_rect, opacity);
     }
 
+    if debug_press {
+        action = Some(Action::Disconnect);
+    }
     let tab = &mut app.tabs[index];
     match action {
         Some(Action::Sidebar) => app.cycle_sidebar(),
