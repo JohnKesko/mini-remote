@@ -11,7 +11,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinSet;
 use tokio::time::{Instant, MissedTickBehavior, interval, sleep_until, timeout, timeout_at};
 
-use crate::identify::is_raspberry_pi_mac;
+use crate::identify::{is_local_name, is_raspberry_pi_mac};
 use crate::mdns::{self, Announcement, MdnsBrowser, ServiceKind};
 use crate::platform::{self, ArpEntry};
 use crate::scan::{self, PortKind, PortState};
@@ -79,6 +79,9 @@ struct Engine {
     probed: HashSet<(IpAddr, u16)>,
     /// Addresses for which a name lookup was started.
     name_requested: HashSet<IpAddr>,
+    /// Names whose addresses were looked up (so one computer seen at several
+    /// addresses gets its name on all of them and is listed once).
+    names_resolved: HashSet<String>,
     /// Addresses that answered in some way, so they exist right now.
     alive: HashSet<IpAddr>,
     /// How many tries failed instantly with "unreachable".
@@ -103,6 +106,7 @@ impl Engine {
             own: HashSet::new(),
             probed: HashSet::new(),
             name_requested: HashSet::new(),
+            names_resolved: HashSet::new(),
             alive: HashSet::new(),
             unreachable: 0,
             closing: false,
@@ -130,7 +134,7 @@ impl Engine {
         }
         self.mdns = mdns::start(self.announcement_sender.clone());
         for name in WELL_KNOWN_NAMES {
-            self.start_forward_lookup(name);
+            self.start_forward_lookup(name.to_string());
         }
     }
 
@@ -300,18 +304,23 @@ impl Engine {
     }
 
     /// Asks the system which address belongs to a name such as `raspberrypi.local`.
-    fn start_forward_lookup(&mut self, name: &'static str) {
+    fn start_forward_lookup(&mut self, name: String) {
+        if self.closing || !self.names_resolved.insert(name.to_ascii_lowercase()) {
+            return;
+        }
         let messages = self.message_sender.clone();
         self.jobs.spawn(async move {
+            let host = name.clone();
             let lookup = tokio::task::spawn_blocking(move || {
-                dns_lookup::lookup_host(name).map(Iterator::collect::<Vec<_>>)
+                dns_lookup::lookup_host(&host).map(Iterator::collect::<Vec<_>>)
             });
             match timeout(FORWARD_LOOKUP_TIMEOUT, lookup).await {
                 Ok(Ok(Ok(addresses))) => {
-                    if let Some(ip) = mdns::pick_addresses(addresses.into_iter()).first() {
+                    // Every IPv4 address (a Pi on Wi-Fi and cable has two).
+                    for ip in mdns::pick_addresses(addresses.into_iter()) {
                         let _ = messages.send(Message::Resolved {
-                            name: name.to_string(),
-                            ip: *ip,
+                            name: name.clone(),
+                            ip,
                         });
                     }
                 }
@@ -332,7 +341,10 @@ impl Engine {
                 kind,
                 state,
             } => self.on_probe(ip, port, kind, state),
-            Message::Name { ip, name } => self.table.update(ip, |host| host.set_hostname(&name)),
+            Message::Name { ip, name } => {
+                self.table.update(ip, |host| host.set_hostname(&name));
+                self.resolve_local_name(&name);
+            }
             Message::Resolved { name, ip } => self.on_resolved(&name, ip),
             Message::Arp(entries) => self.on_arp(entries),
         }
@@ -369,6 +381,14 @@ impl Engine {
         }
         self.table.update(ip, |host| host.set_hostname(name));
         self.probe_usual_ports(ip);
+    }
+
+    /// Looks up the addresses of a `.local` name, so its name lands on all of them.
+    fn resolve_local_name(&mut self, name: &str) {
+        let name = name.trim_end_matches('.');
+        if is_local_name(name) {
+            self.start_forward_lookup(name.to_string());
+        }
     }
 
     fn on_announcement(&mut self, announcement: Announcement) {
@@ -409,6 +429,9 @@ impl Engine {
                     host.is_raspberry_pi = true;
                 }
             });
+            if let Some(name) = &announcement.hostname {
+                self.resolve_local_name(name);
+            }
             if announcement.kind == ServiceKind::Rfb {
                 // A VNC server may announce a port outside the usual ones.
                 self.probe_once(ip, announcement.port, PortKind::Vnc);

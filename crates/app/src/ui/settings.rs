@@ -66,12 +66,16 @@ pub fn page_ui(app: &mut App, ui: &mut Ui) {
                 segmented(ui, &mut s.keyboard_mode, &options)
             });
             row_divider(ui);
+            setting_row(ui, "Esc leaves full screen", Some("Turn off to send Esc to the Pi while in full screen."), |ui| {
+                toggle(ui, &mut s.escape_leaves_fullscreen)
+            });
+            row_divider(ui);
             row_hint(ui, LAYOUT_HINT);
             row_divider(ui);
             row_hint(
                 ui,
                 &format!(
-                    "Mini Remote's own shortcuts: {} full screen, {} menu, {} disconnect.",
+                    "Mini Remote's own shortcuts: {} full screen (Esc also leaves it), {} menu, {} disconnect.",
                     crate::platform::shortcut_label("F"),
                     crate::platform::shortcut_label("S"),
                     crate::platform::shortcut_label("W"),

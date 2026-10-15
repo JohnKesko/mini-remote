@@ -1,6 +1,6 @@
 //! The list of computers found so far, and the rules for announcing them.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::IpAddr;
 
 use tokio::sync::mpsc::UnboundedSender;
@@ -50,16 +50,41 @@ impl DiscoveredHost {
         }
     }
 
+    /// Takes over what was learned about the same computer at another address.
+    pub(crate) fn absorb(&mut self, other: &DiscoveredHost) {
+        for &port in &other.vnc_ports {
+            if let Err(position) = self.vnc_ports.binary_search(&port) {
+                self.vnc_ports.insert(position, port);
+            }
+        }
+        if self.rfb_version.is_none() {
+            self.rfb_version = other.rfb_version.clone();
+        }
+        self.ssh |= other.ssh;
+        self.is_raspberry_pi |= other.is_raspberry_pi;
+        if self.service_name.is_none() {
+            self.service_name = other.service_name.clone();
+        }
+        if let Some(name) = &other.hostname {
+            self.set_hostname(name);
+        }
+    }
+
     /// Worth showing: offers screen sharing or secure shell, or is a Pi.
     fn is_interesting(&self) -> bool {
         !self.vnc_ports.is_empty() || self.ssh || self.is_raspberry_pi
     }
 }
 
-/// Keeps every computer by address and sends `Found` / `Updated` events.
+/// Keeps every computer by address and sends `Found` / `Updated` / `Removed`
+/// events. One computer seen at several addresses with the same name (a Pi on
+/// both Wi-Fi and cable, or with an IPv4 and an IPv6 address) is listed once,
+/// under its best address, with what was learned at all of them.
 pub(crate) struct HostTable {
+    /// What each address told us itself.
     hosts: HashMap<IpAddr, DiscoveredHost>,
-    announced: HashSet<IpAddr>,
+    /// What was last sent for each listed address.
+    shown: HashMap<IpAddr, DiscoveredHost>,
     events: UnboundedSender<DiscoveryEvent>,
 }
 
@@ -67,13 +92,13 @@ impl HostTable {
     pub(crate) fn new(events: UnboundedSender<DiscoveryEvent>) -> Self {
         Self {
             hosts: HashMap::new(),
-            announced: HashSet::new(),
+            shown: HashMap::new(),
             events,
         }
     }
 
-    /// Changes what we know about a computer. If it is worth showing and
-    /// something changed, the matching event is sent.
+    /// Changes what we know about an address. If the computer is worth showing
+    /// and something changed, the matching events are sent.
     pub(crate) fn update(&mut self, address: IpAddr, change: impl FnOnce(&mut DiscoveredHost)) {
         let host = self
             .hosts
@@ -81,19 +106,58 @@ impl HostTable {
             .or_insert_with(|| DiscoveredHost::new(address));
         let before = host.clone();
         change(host);
-        if *host == before || !host.is_interesting() {
+        if *host != before {
+            self.refresh(address);
+        }
+    }
+
+    /// Recomputes the listing for the computer that `address` belongs to.
+    fn refresh(&mut self, address: IpAddr) {
+        let name = self.hosts.get(&address).and_then(|h| h.hostname.clone());
+        let group: Vec<IpAddr> = match &name {
+            Some(name) => self
+                .hosts
+                .iter()
+                .filter(|(_, h)| h.hostname.as_deref().is_some_and(|n| n.eq_ignore_ascii_case(name)))
+                .map(|(a, _)| *a)
+                .collect(),
+            None => vec![address],
+        };
+        // Best address first: screen sharing, then IPv4, then SSH, then the
+        // one already shown (so the list does not jump around).
+        let rank = |a: &IpAddr| {
+            let h = &self.hosts[a];
+            (
+                !h.vnc_ports.is_empty(),
+                a.is_ipv4(),
+                h.ssh,
+                self.shown.contains_key(a),
+                std::cmp::Reverse(*a),
+            )
+        };
+        let best = *group.iter().max_by_key(|a| rank(a)).expect("group holds address");
+
+        let mut combined = self.hosts[&best].clone();
+        for other in group.iter().filter(|a| **a != best) {
+            if self.shown.remove(other).is_some() {
+                // Nobody listening any more is not an error.
+                let _ = self.events.send(DiscoveryEvent::Removed(*other));
+            }
+            combined.absorb(&self.hosts[other]);
+        }
+        if !combined.is_interesting() {
             return;
         }
-        let event = if self.announced.insert(address) {
-            DiscoveryEvent::Found(host.clone())
-        } else {
-            DiscoveryEvent::Updated(host.clone())
+        let event = match self.shown.get(&best) {
+            Some(previous) if *previous == combined => return,
+            Some(_) => DiscoveryEvent::Updated(combined.clone()),
+            None => DiscoveryEvent::Found(combined.clone()),
         };
-        // Nobody listening any more is not an error.
+        self.shown.insert(best, combined);
         let _ = self.events.send(event);
     }
 
-    /// What we know about a computer (even if it was not announced yet).
+    /// What an address told us (even if it was not announced yet).
     pub(crate) fn get(&self, address: IpAddr) -> Option<&DiscoveredHost> {
         self.hosts.get(&address)
     }
@@ -113,6 +177,11 @@ mod tests {
     use super::*;
 
     const HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
+    const HOST_V6: IpAddr = IpAddr::V6(std::net::Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0x10));
+
+    fn drain(rx: &mut UnboundedReceiver<DiscoveryEvent>) -> Vec<DiscoveryEvent> {
+        std::iter::from_fn(|| rx.try_recv().ok()).collect()
+    }
 
     fn table() -> (HostTable, UnboundedReceiver<DiscoveryEvent>) {
         let (tx, rx) = unbounded_channel();
@@ -190,5 +259,72 @@ mod tests {
         assert!(!table.is_closed());
         drop(rx);
         assert!(table.is_closed());
+    }
+
+    #[test]
+    fn ipv6_twin_found_first_is_taken_back() {
+        let (mut table, mut rx) = table();
+        // Seen at its IPv6 address first, with only a name (a Pi-like one).
+        table.update(HOST_V6, |h| h.set_hostname("pi-test.local"));
+        // Then at its IPv4 address, where screen sharing answers.
+        table.update(HOST, |h| h.add_vnc_port(5900, "3.8"));
+        table.update(HOST, |h| h.set_hostname("pi-test.local"));
+        let events = drain(&mut rx);
+        assert!(matches!(&events[0], DiscoveryEvent::Found(h) if h.address == HOST_V6));
+        assert!(events.contains(&DiscoveryEvent::Removed(HOST_V6)));
+        let DiscoveryEvent::Updated(last) = events.last().unwrap() else { panic!("expected Updated") };
+        assert_eq!(last.address, HOST);
+        assert_eq!(last.vnc_ports, vec![5900]);
+        assert!(last.is_raspberry_pi);
+    }
+
+    #[test]
+    fn ipv6_twin_found_later_is_never_shown() {
+        let (mut table, mut rx) = table();
+        table.update(HOST, |h| h.add_vnc_port(5900, "3.8"));
+        table.update(HOST, |h| h.set_hostname("Pi-Test.local"));
+        drain(&mut rx);
+        table.update(HOST_V6, |h| h.set_hostname("pi-test.local"));
+        // News about the IPv6 address lands on the IPv4 entry.
+        table.update(HOST_V6, |h| h.ssh = true);
+        let events = drain(&mut rx);
+        assert!(events.iter().all(|e| !matches!(e, DiscoveryEvent::Found(h) if h.address == HOST_V6)));
+        let DiscoveryEvent::Updated(last) = events.last().unwrap() else { panic!("expected Updated") };
+        assert_eq!(last.address, HOST);
+        assert!(last.ssh);
+    }
+
+    #[test]
+    fn different_names_stay_apart() {
+        let (mut table, mut rx) = table();
+        table.update(HOST, |h| h.set_hostname("pi-one.local"));
+        table.update(HOST_V6, |h| h.set_hostname("pi-two.local"));
+        let found: Vec<IpAddr> = drain(&mut rx)
+            .into_iter()
+            .filter_map(|e| if let DiscoveryEvent::Found(h) = e { Some(h.address) } else { None })
+            .collect();
+        assert_eq!(found, vec![HOST, HOST_V6]);
+    }
+
+    #[test]
+    fn same_name_on_two_ipv4_addresses_keeps_the_one_with_screen_sharing() {
+        let (mut table, mut rx) = table();
+        let cable = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 5));
+        let wifi = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 60));
+        table.update(cable, |h| h.set_hostname("pi-test.local"));
+        table.update(wifi, |h| h.set_hostname("pi-test.local"));
+        // Only one entry so far, even though both looked like a Pi.
+        let found: Vec<IpAddr> = drain(&mut rx)
+            .into_iter()
+            .filter_map(|e| if let DiscoveryEvent::Found(h) = e { Some(h.address) } else { None })
+            .collect();
+        assert_eq!(found, vec![cable]);
+        // Screen sharing answers on the Wi-Fi address: that one takes over.
+        table.update(wifi, |h| h.add_vnc_port(5900, "3.8"));
+        let events = drain(&mut rx);
+        assert!(events.contains(&DiscoveryEvent::Removed(cable)), "{events:?}");
+        let DiscoveryEvent::Found(last) = events.last().unwrap() else { panic!("expected Found, got {events:?}") };
+        assert_eq!(last.address, wifi);
+        assert_eq!(last.vnc_ports, vec![5900]);
     }
 }

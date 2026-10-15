@@ -139,6 +139,8 @@ pub struct App {
     clipboard: ClipboardWatcher,
     focused: bool,
     pub(crate) fullscreen: bool,
+    /// Esc left full screen; keep its release from the remote computer too.
+    swallow_escape_release: bool,
     requests: Vec<WindowRequest>,
     bg_tx: mpsc::Sender<BgResult>,
     bg_rx: mpsc::Receiver<BgResult>,
@@ -207,6 +209,7 @@ impl App {
             clipboard: ClipboardWatcher::new(),
             focused: true,
             fullscreen: false,
+            swallow_escape_release: false,
             requests: Vec::new(),
             bg_tx,
             bg_rx,
@@ -621,6 +624,9 @@ impl App {
                         Some(existing) => *existing = host,
                         None => self.discovery.hosts.push(host),
                     }
+                }
+                Ok(discovery::DiscoveryEvent::Removed(address)) => {
+                    self.discovery.hosts.retain(|h| h.address != address);
                 }
                 Ok(discovery::DiscoveryEvent::Finished) | Err(mpsc::TryRecvError::Disconnected) => {
                     self.discovery.running = false;
@@ -1139,6 +1145,25 @@ impl App {
     /// (sent to the remote computer or an app shortcut) and egui must not see it.
     pub fn on_key(&mut self, event: &KeyEvent, synthetic: bool) -> bool {
         let input = KeyInput::from_winit(event);
+        // Esc leaves full screen (unless turned off in Settings). Its release is
+        // kept from the remote computer too, so it never sees half a key press.
+        let escape = matches!(input.base, Key::Named(egui_winit::winit::keyboard::NamedKey::Escape));
+        if escape && !input.pressed && self.swallow_escape_release {
+            self.swallow_escape_release = false;
+            return true;
+        }
+        if escape
+            && input.pressed
+            && self.fullscreen
+            && self.settings.escape_leaves_fullscreen
+            && self.modifiers.is_empty()
+        {
+            if !input.repeat {
+                self.set_fullscreen(false);
+            }
+            self.swallow_escape_release = true;
+            return true;
+        }
         if let Some(shortcut) = shortcut_for(&input, self.modifiers) {
             if input.pressed && !input.repeat {
                 self.run_shortcut(shortcut);

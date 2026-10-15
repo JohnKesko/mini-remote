@@ -224,6 +224,8 @@ pub struct Settings {
     /// Default for new connections: allow logins without encryption.
     pub default_allow_unencrypted: bool,
     pub auto_reconnect: bool,
+    /// Esc leaves full screen instead of going to the remote computer.
+    pub escape_leaves_fullscreen: bool,
     /// Where copied files go; `None` means the Downloads folder.
     pub download_dir: Option<String>,
     /// Side menu size while a remote screen is shown.
@@ -253,6 +255,7 @@ impl Default for Settings {
             default_video: false,
             default_allow_unencrypted: false,
             auto_reconnect: true,
+            escape_leaves_fullscreen: true,
             download_dir: None,
             sidebar: SidebarMode::Full,
         }

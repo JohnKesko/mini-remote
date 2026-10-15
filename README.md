@@ -75,7 +75,7 @@ Move the mouse to the top of the Pi's screen to show the toolbar. From there you
 ### Keyboard
 
 - The **Command** key works like **Ctrl** on the Pi, so Cmd+C and Cmd+V copy and paste as you are used to.
-- **Control + Command + F**: full screen on or off.
+- **Control + Command + F**: full screen on or off. **Esc** also leaves full screen (you can turn that off in Settings if you need Esc on the Pi).
 - **Control + Command + S**: show or hide the sidebar.
 - **Control + Command + W**: disconnect.
 

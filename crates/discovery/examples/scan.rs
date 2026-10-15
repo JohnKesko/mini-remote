@@ -36,6 +36,9 @@ fn main() {
                 DiscoveryEvent::Updated(host) => {
                     println!("[{seconds:5.2}s] updated {}", describe(&host))
                 }
+                DiscoveryEvent::Removed(address) => {
+                    println!("[{seconds:5.2}s] removed {address} (same computer as another address)")
+                }
                 DiscoveryEvent::Finished => println!("[{seconds:5.2}s] finished"),
             }
         }

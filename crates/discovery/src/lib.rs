@@ -53,6 +53,9 @@ pub enum DiscoveryEvent {
     Found(DiscoveredHost),
     /// More was learned about a computer that was already reported.
     Updated(DiscoveredHost),
+    /// An address reported earlier turned out to be another address of a
+    /// computer that is listed under its IPv4 address. Drop it from the list.
+    Removed(IpAddr),
     /// Discovery is over. The channel closes after this.
     Finished,
 }

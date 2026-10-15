@@ -81,10 +81,19 @@ fn to_u16(v: f32) -> u16 {
     v.round().clamp(0.0, f32::from(u16::MAX)) as u16
 }
 
+/// True when the pointer is over something floating above the remote screen:
+/// the toolbar, menus, dialogs or the Files panel. The remote screen itself is
+/// drawn in the background layer, which `Context::is_pointer_over_egui` also
+/// counts as egui, so that check blocked every mouse event to the remote computer.
+pub(crate) fn pointer_over_controls(ctx: &egui::Context) -> bool {
+    let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) else { return false };
+    ctx.layer_id_at(pos).is_some_and(|layer| layer.order != egui::Order::Background)
+}
+
 /// Send mouse movement, buttons and scrolling over the remote screen.
 fn handle_mouse(ui: &Ui, tab: &mut SessionTab, view: &ViewLayout, area: Rect) {
     let Some((rw, rh)) = tab.texture.as_ref().map(|t| (t.width as u16, t.height as u16)) else { return };
-    let over_controls = ui.ctx().is_pointer_over_egui();
+    let over_controls = pointer_over_controls(ui.ctx());
     let latest = ui.input(|i| i.pointer.latest_pos());
     let events = ui.input(|i| i.events.clone());
     for event in events {
@@ -144,7 +153,7 @@ fn handle_mouse(ui: &Ui, tab: &mut SessionTab, view: &ViewLayout, area: Rect) {
 /// hide the local one over the remote screen.
 fn draw_cursor(ui: &Ui, tab: &SessionTab, view: &ViewLayout, area: Rect, pointer: Option<egui::Pos2>) {
     let Some(pos) = pointer else { return };
-    if !area.contains(pos) || ui.ctx().is_pointer_over_egui() || !tab.cursor.known {
+    if !area.contains(pos) || pointer_over_controls(ui.ctx()) || !tab.cursor.known {
         return;
     }
     ui.ctx().set_cursor_icon(CursorIcon::None);
@@ -157,4 +166,52 @@ fn draw_cursor(ui: &Ui, tab: &SessionTab, view: &ViewLayout, area: Rect, pointer
     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
     let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("remote-cursor")));
     painter.with_clip_rect(area).image(texture.id(), rect, uv, Color32::WHITE);
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::{Area, CentralPanel, Context, Event, Id, Order, PointerButton, RawInput, pos2, vec2};
+
+    use super::pointer_over_controls;
+
+    /// One frame laid out like a session: the screen fills the window and a
+    /// small floating toolbar sits on top of it.
+    fn frame(ctx: &Context, pointer: egui::Pos2) -> (bool, bool) {
+        let input = RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
+            events: vec![
+                Event::PointerMoved(pointer),
+                Event::PointerButton { pos: pointer, button: PointerButton::Primary, pressed: true, modifiers: Default::default() },
+            ],
+            ..Default::default()
+        };
+        let mut result = (false, false);
+        let mut output = ctx.run_ui(input, |ui| {
+            CentralPanel::default().show(ui, |ui| {
+                ui.allocate_space(ui.available_size());
+            });
+            Area::new(Id::new("toolbar")).order(Order::Foreground).fixed_pos(pos2(300.0, 10.0)).show(ui.ctx(), |ui| {
+                ui.allocate_space(vec2(200.0, 40.0));
+            });
+            result = (pointer_over_controls(ui.ctx()), ui.ctx().is_pointer_over_egui());
+        });
+        // No GPU here, so drop the font texture updates.
+        output.textures_delta.clear();
+        result
+    }
+
+    #[test]
+    fn remote_screen_gets_the_mouse_but_the_toolbar_does_not() {
+        let ctx = Context::default();
+        // Layer positions come from the previous frame, so run each case twice.
+        frame(&ctx, pos2(400.0, 400.0));
+        let (over_controls, over_egui) = frame(&ctx, pos2(400.0, 400.0));
+        assert!(!over_controls, "the remote screen must receive the mouse");
+        // The old check said "over egui" here, which blocked the mouse.
+        assert!(over_egui);
+
+        frame(&ctx, pos2(350.0, 25.0));
+        let (over_controls, _) = frame(&ctx, pos2(350.0, 25.0));
+        assert!(over_controls, "clicks on the toolbar must not reach the remote screen");
+    }
 }
