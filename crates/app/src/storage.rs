@@ -27,10 +27,7 @@ pub struct Storage {
 impl Storage {
     /// Open the app folder, creating it if needed. Without a folder nothing is saved.
     pub fn open() -> Self {
-        // MINI_REMOTE_DATA_DIR keeps test runs away from the real settings.
-        let dir = std::env::var_os("MINI_REMOTE_DATA_DIR")
-            .filter(|d| !d.is_empty())
-            .map(PathBuf::from)
+        let dir = custom_dir()
             .or_else(|| directories::ProjectDirs::from("", "", "Mini Remote").map(|d| d.config_dir().to_path_buf()));
         if let Some(dir) = &dir
             && let Err(err) = fs::create_dir_all(dir.join(THUMBNAILS_DIR))
@@ -127,6 +124,12 @@ impl Storage {
             log::warn!("could not save {}: {err}", path.display());
         }
     }
+}
+
+/// Development aid: `MINI_REMOTE_CONFIG_DIR` points at a separate folder (for
+/// tests and screenshots). Passwords are then kept in memory only.
+pub fn custom_dir() -> Option<PathBuf> {
+    std::env::var_os("MINI_REMOTE_CONFIG_DIR").filter(|d| !d.is_empty()).map(PathBuf::from)
 }
 
 /// Write to a temporary file and rename it, so a crash never leaves half a file.

@@ -21,6 +21,15 @@ use crate::texture::RemoteTexture;
 pub enum WindowRequest {
     Title(String),
     Fullscreen(bool),
+    /// Light or dark window frame; `None` follows the system.
+    Theme(Option<crate::model::Appearance>),
+    /// Move the window with the mouse (dragging the header).
+    Drag,
+    /// Zoom or unzoom (double-click on the header).
+    ToggleZoom,
+    /// Debug builds: resize the window (for checking layouts).
+    #[allow(dead_code)]
+    Size(f32, f32),
 }
 
 /// Results of work done on background threads.
@@ -28,6 +37,7 @@ pub enum BgResult {
     ScreenshotSaved(PathBuf),
     ScreenshotFailed(String),
     ThumbnailSaved(String),
+    DownloadFolder(PathBuf),
 }
 
 pub enum ToastAction {
@@ -84,6 +94,18 @@ pub struct HomeState {
     pub focus_quick_connect: bool,
 }
 
+/// What the content area shows (chosen in the side menu).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Page {
+    Saved,
+    /// The connection editor (new or edit).
+    Editor,
+    Find,
+    Settings,
+    /// The remote screen of an open connection.
+    Session(u64),
+}
+
 /// App shortcuts that work even while the remote screen has the keyboard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shortcut {
@@ -91,6 +113,7 @@ pub enum Shortcut {
     CloseTab,
     NextTab,
     PreviousTab,
+    ToggleSidebar,
 }
 
 pub struct App {
@@ -104,12 +127,13 @@ pub struct App {
     pub(crate) connections: Vec<Connection>,
     trusted: BTreeMap<String, String>,
     pub(crate) tabs: Vec<SessionTab>,
-    /// The visible tab; `None` is the home screen.
-    pub(crate) active: Option<u64>,
+    /// What the content area shows.
+    pub(crate) page: Page,
+    /// Where "Cancel" in the editor goes back to.
+    previous_page: Page,
     next_tab_id: u64,
     pub(crate) home: HomeState,
     pub(crate) editor: Option<EditorState>,
-    pub(crate) settings_open: bool,
     pub(crate) toasts: Vec<Toast>,
     next_toast_id: u64,
     clipboard: ClipboardWatcher,
@@ -123,6 +147,8 @@ pub struct App {
     modifiers: ModifiersState,
     pub(crate) discovery: DiscoveryState,
     title: String,
+    /// Height of the transparent system title bar over the app (0 if none).
+    pub(crate) title_bar: f32,
     /// Debug builds only: things to open automatically, for checking screens.
     debug_open: Vec<String>,
 }
@@ -155,6 +181,7 @@ impl App {
 
         crate::ui::theme::install(&ctx);
         apply_appearance(&ctx, &settings);
+        let appearance = settings.appearance;
 
         let mut app = App {
             ctx,
@@ -162,16 +189,17 @@ impl App {
             runtime,
             wake,
             storage,
-            secrets: platform::secret_store(),
+            // With a separate config folder, never touch the real Keychain.
+            secrets: if storage::custom_dir().is_some() { platform::memory_store() } else { platform::secret_store() },
             settings,
             connections,
             trusted,
             tabs: Vec::new(),
-            active: None,
+            page: Page::Saved,
+            previous_page: Page::Saved,
             next_tab_id: 1,
             home: HomeState { focus_quick_connect: true, ..HomeState::default() },
             editor: None,
-            settings_open: false,
             toasts: Vec::new(),
             next_toast_id: 1,
             clipboard: ClipboardWatcher::new(),
@@ -184,8 +212,10 @@ impl App {
             modifiers: ModifiersState::empty(),
             discovery: DiscoveryState::default(),
             title: String::new(),
+            title_bar: 0.0,
             debug_open: Vec::new(),
         };
+        app.requests.push(WindowRequest::Theme(Some(appearance)));
         app.debug_startup();
         match connect_to {
             Some(address) => app.quick_connect(&address),
@@ -252,19 +282,40 @@ impl App {
         self.activate(Some(id));
     }
 
-    /// Show a tab (or the home screen with `None`).
+    /// The open connection whose screen is shown, if any.
+    pub fn active(&self) -> Option<u64> {
+        match self.page {
+            Page::Session(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Show a connection's screen (or the saved connections with `None`).
     pub fn activate(&mut self, id: Option<u64>) {
-        if self.active == id {
+        self.show_page(id.map_or(Page::Saved, Page::Session));
+    }
+
+    /// Switch what the content area shows.
+    pub fn show_page(&mut self, page: Page) {
+        if self.page == page {
             return;
         }
         if let Some(tab) = self.active_tab_mut() {
             tab.release_input();
         }
-        self.active = id;
-        if id.is_none() {
-            self.home.focus_quick_connect = true;
-            self.start_discovery(false);
+        if self.page == Page::Editor {
+            self.editor = None;
         } else {
+            self.previous_page = self.page;
+        }
+        self.page = page;
+        if page == Page::Saved {
+            self.home.focus_quick_connect = true;
+        }
+        if page == Page::Find {
+            self.start_discovery(false);
+        }
+        if let Page::Session(_) = page {
             // Give the keyboard to the remote screen.
             self.ctx.memory_mut(|m| {
                 if let Some(focused) = m.focused() {
@@ -282,9 +333,9 @@ impl App {
         if let Some(tex) = tab.texture.take() {
             tex.free(&self.gpu);
         }
-        if self.active == Some(id) {
+        if self.page == Page::Session(id) {
             let next = self.tabs.get(index.min(self.tabs.len().saturating_sub(1))).map(|t| t.id);
-            self.active = None;
+            self.page = Page::Saved;
             self.activate(next);
             if next.is_none() && self.fullscreen {
                 self.set_fullscreen(false);
@@ -293,12 +344,12 @@ impl App {
     }
 
     pub fn active_index(&self) -> Option<usize> {
-        let id = self.active?;
+        let id = self.active()?;
         self.tabs.iter().position(|t| t.id == id)
     }
 
     pub fn active_tab_mut(&mut self) -> Option<&mut SessionTab> {
-        let id = self.active?;
+        let id = self.active()?;
         self.tabs.iter_mut().find(|t| t.id == id)
     }
 
@@ -372,6 +423,29 @@ impl App {
             error: None,
             for_tab,
         });
+        self.show_page(Page::Editor);
+    }
+
+    /// Leave the editor without saving.
+    pub fn cancel_editor(&mut self) {
+        let back = match self.previous_page {
+            Page::Session(id) if !self.tabs.iter().any(|t| t.id == id) => Page::Saved,
+            Page::Editor => Page::Saved,
+            other => other,
+        };
+        self.editor = None;
+        self.show_page(back);
+    }
+
+    /// Side menu while a remote screen is shown: full, icons only, hidden.
+    pub fn cycle_sidebar(&mut self) {
+        use crate::model::SidebarMode;
+        self.settings.sidebar = match self.settings.sidebar {
+            SidebarMode::Full => SidebarMode::Rail,
+            SidebarMode::Rail => SidebarMode::Hidden,
+            SidebarMode::Hidden => SidebarMode::Full,
+        };
+        self.storage.save_settings(&self.settings);
     }
 
     /// Save the editor's connection; optionally connect right away.
@@ -464,12 +538,27 @@ impl App {
             self.activate(Some(id));
         } else if connect {
             self.open_connection(conn, typed);
+        } else {
+            self.show_page(Page::Saved);
         }
+    }
+
+    /// Ask where copied files should go (system folder picker).
+    pub fn choose_download_folder(&mut self) {
+        let tx = self.bg_tx.clone();
+        let wake = self.wake.clone();
+        self.runtime.spawn(async move {
+            if let Some(dir) = platform::pick_folder("Where should copied files go?").await {
+                let _ = tx.send(BgResult::DownloadFolder(dir));
+                wake();
+            }
+        });
     }
 
     pub fn save_settings(&mut self) {
         self.storage.save_settings(&self.settings);
         apply_appearance(&self.ctx, &self.settings);
+        self.requests.push(WindowRequest::Theme(Some(self.settings.appearance)));
     }
 
     // ----- Network discovery -----------------------------------------------------
@@ -485,6 +574,13 @@ impl App {
         }
         let (tx, rx) = mpsc::channel();
         let wake = self.wake.clone();
+        if std::env::var_os("MINI_REMOTE_SAMPLE_DEVICES").is_some_and(|v| !v.is_empty() && v != "0") {
+            self.runtime.spawn(sample_devices(tx, wake));
+            self.discovery.running = true;
+            self.discovery.started = Some(Instant::now());
+            self.discovery.rx = Some(rx);
+            return;
+        }
         self.runtime.spawn(async move {
             let mut events = discovery::discover(discovery::DiscoveryOptions::default());
             while let Some(event) = events.recv().await {
@@ -557,6 +653,17 @@ impl App {
         if let Some(tab) = self.tabs.last_mut() {
             tab.offer_save = true;
         }
+    }
+
+    /// Open the editor pre-filled for a computer found on the network.
+    pub fn save_discovered(&mut self, host: &discovery::DiscoveredHost) {
+        let conn = Connection {
+            name: discovered_name(host),
+            host: host.hostname.clone().unwrap_or_else(|| host.address.to_string()),
+            port: host.vnc_ports.first().copied().unwrap_or(crate::model::DEFAULT_VNC_PORT),
+            ..Connection::new_with_defaults(&self.settings)
+        };
+        self.open_editor(conn, true, None);
     }
 
     /// Save the connection of a tab (from the "Save it?" message).
@@ -636,6 +743,10 @@ impl App {
                 BgResult::ThumbnailSaved(id) => {
                     self.home.thumbnails.remove(&id);
                 }
+                BgResult::DownloadFolder(dir) => {
+                    self.settings.download_dir = Some(dir.display().to_string());
+                    self.save_settings();
+                }
             }
         }
 
@@ -696,7 +807,8 @@ impl App {
             match notice {
                 crate::files::FilesNotice::Downloaded(path) => {
                     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                    self.toast_with(format!("Copied “{name}” to Downloads"), Some(ToastAction::Reveal(path)));
+                    let folder = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    self.toast_with(format!("Copied “{name}” to {folder}"), Some(ToastAction::Reveal(path)));
                 }
                 crate::files::FilesNotice::Toast(text) => self.toast(text),
             }
@@ -722,8 +834,6 @@ impl App {
     /// Called at the end of each frame, after the UI was drawn.
     pub(crate) fn after_ui(&mut self) {
         let remote = self.focused
-            && self.editor.is_none()
-            && !self.settings_open
             && self.home.confirm_delete.is_none()
             && !self.ctx.text_edit_focused()
             && !self.ctx.any_popup_open()
@@ -759,12 +869,31 @@ impl App {
                         self.open_connection(conn, None);
                     }
                 }
+                Some(("password", entry)) => {
+                    // Test password for a saved connection, kept in memory only.
+                    if storage::custom_dir().is_some()
+                        && let Some((id, password)) = entry.split_once('=')
+                        && let Some(conn) = self.connections.iter().find(|c| c.id == id)
+                    {
+                        let _ = self.secrets.set(&conn.secret_key(), password);
+                    }
+                }
                 Some(("editor", id)) => {
                     if let Some(conn) = self.connections.iter().find(|c| c.id == id).cloned() {
                         self.open_editor(conn, false, None);
                     }
                 }
-                None if item == "settings" => self.settings_open = true,
+                None if item == "settings" => self.show_page(Page::Settings),
+                None if item == "find" => self.show_page(Page::Find),
+                None if item == "new" => self.open_editor_new(),
+                Some(("delete", id)) => self.home.confirm_delete = Some(id.to_string()),
+                Some(("size", size)) => {
+                    if let Some((w, h)) = size.split_once('x')
+                        && let (Ok(w), Ok(h)) = (w.parse(), h.parse())
+                    {
+                        self.requests.push(WindowRequest::Size(w, h));
+                    }
+                }
                 _ => self.debug_open.push(item.to_string()),
             }
         }
@@ -965,6 +1094,15 @@ impl App {
         self.fullscreen = on;
     }
 
+    pub fn set_title_bar_height(&mut self, height: f32) {
+        self.title_bar = height;
+    }
+
+    /// Ask the runner to do something with the window.
+    pub fn window_request(&mut self, request: WindowRequest) {
+        self.requests.push(request);
+    }
+
     pub fn on_modifiers(&mut self, modifiers: ModifiersState) {
         self.modifiers = modifiers;
     }
@@ -1010,19 +1148,21 @@ impl App {
     pub fn run_shortcut(&mut self, shortcut: Shortcut) {
         match shortcut {
             Shortcut::FullScreen => {
-                if self.active.is_some() || self.fullscreen {
+                if self.active().is_some() || self.fullscreen {
                     self.set_fullscreen(!self.fullscreen);
                 }
             }
             Shortcut::CloseTab => {
-                if let Some(id) = self.active {
+                if let Some(id) = self.active() {
                     self.close_tab(id);
                 }
             }
+            Shortcut::ToggleSidebar => self.cycle_sidebar(),
             Shortcut::NextTab | Shortcut::PreviousTab => {
                 let mut ids: Vec<Option<u64>> = vec![None];
                 ids.extend(self.tabs.iter().map(|t| Some(t.id)));
-                let pos = ids.iter().position(|id| *id == self.active).unwrap_or(0);
+                let current = self.active();
+                let pos = ids.iter().position(|id| *id == current).unwrap_or(0);
                 let n = ids.len();
                 let next = if shortcut == Shortcut::NextTab { (pos + 1) % n } else { (pos + n - 1) % n };
                 self.activate(ids[next]);
@@ -1047,6 +1187,37 @@ impl App {
         let App { runtime, .. } = self;
         runtime.shutdown_timeout(Duration::from_millis(500));
     }
+}
+
+/// Development aid (`MINI_REMOTE_SAMPLE_DEVICES=1`): a pretend network scan with
+/// made-up devices, for screenshots. The real network is not scanned.
+async fn sample_devices(tx: mpsc::Sender<discovery::DiscoveryEvent>, wake: Wake) {
+    use discovery::{DiscoveredHost, DiscoveryEvent};
+    let host = |name: &str, ip: [u8; 4], pi: bool, vnc: bool, rfb: Option<&str>| DiscoveredHost {
+        address: std::net::IpAddr::from(ip),
+        hostname: Some(name.to_string()),
+        vnc_ports: if vnc { vec![crate::model::DEFAULT_VNC_PORT] } else { Vec::new() },
+        rfb_version: rfb.map(str::to_string),
+        ssh: true,
+        is_raspberry_pi: pi,
+        service_name: None,
+    };
+    let hosts = [
+        host("raspberrypi.local", [192, 168, 1, 50], true, true, Some("3.8")),
+        host("pi-kitchen.local", [192, 168, 1, 51], true, false, None),
+        host("nas.local", [192, 168, 1, 20], false, false, None),
+        host("office-pc.local", [192, 168, 1, 30], false, true, Some("5.0")),
+    ];
+    for h in hosts {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        if tx.send(DiscoveryEvent::Found(h)).is_err() {
+            return;
+        }
+        wake();
+    }
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let _ = tx.send(DiscoveryEvent::Finished);
+    wake();
 }
 
 /// Name to show for a computer found on the network.
@@ -1075,6 +1246,7 @@ fn shortcut_for(input: &KeyInput, mods: ModifiersState) -> Option<Shortcut> {
         Key::Character(c) if c.eq_ignore_ascii_case("w") => Some(Shortcut::CloseTab),
         Key::Named(NamedKey::ArrowRight) => Some(Shortcut::NextTab),
         Key::Named(NamedKey::ArrowLeft) => Some(Shortcut::PreviousTab),
+        Key::Character(c) if c.eq_ignore_ascii_case("s") => Some(Shortcut::ToggleSidebar),
         _ => None,
     }
 }

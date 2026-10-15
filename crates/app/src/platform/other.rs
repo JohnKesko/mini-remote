@@ -77,8 +77,20 @@ pub fn window_attributes(attrs: WindowAttributes) -> WindowAttributes {
     attrs
 }
 
+/// The native title bar is kept here, so the app header has no window buttons.
+pub fn title_bar_height(_window: &egui_winit::winit::window::Window) -> f32 {
+    0.0
+}
+
+pub const WINDOW_BUTTONS_WIDTH: f32 = 0.0;
+
 pub fn physical_key(key: PhysicalKey) -> PhysicalKey {
     key
+}
+
+/// No folder picker on this system yet.
+pub async fn pick_folder(_title: &str) -> Option<std::path::PathBuf> {
+    None
 }
 
 /// No file picker on this system yet; files can still be dropped onto the window.

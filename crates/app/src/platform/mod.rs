@@ -29,6 +29,35 @@ pub fn secret_store() -> Box<dyn SecretStore> {
     imp::secret_store()
 }
 
+/// Passwords kept only while the app runs (used with `MINI_REMOTE_CONFIG_DIR`).
+pub fn memory_store() -> Box<dyn SecretStore> {
+    Box::new(MemoryStore::default())
+}
+
+#[derive(Default)]
+struct MemoryStore {
+    secrets: parking_lot::Mutex<std::collections::HashMap<String, String>>,
+}
+
+impl SecretStore for MemoryStore {
+    fn get(&self, key: &str) -> Option<String> {
+        self.secrets.lock().get(key).cloned()
+    }
+
+    fn set(&self, key: &str, secret: &str) -> Result<(), String> {
+        self.secrets.lock().insert(key.to_string(), secret.to_string());
+        Ok(())
+    }
+
+    fn delete(&self, key: &str) {
+        self.secrets.lock().remove(key);
+    }
+
+    fn available(&self) -> bool {
+        true
+    }
+}
+
 /// Name of the password store as users know it, e.g. "Keychain".
 pub fn secret_store_name() -> &'static str {
     imp::SECRET_STORE_NAME
@@ -113,12 +142,28 @@ pub async fn pick_files_to_upload() -> Vec<PathBuf> {
     imp::pick_files_to_upload().await
 }
 
+/// Let the user choose a folder. Can be called from any thread.
+pub async fn pick_folder(title: &str) -> Option<PathBuf> {
+    imp::pick_folder(title).await
+}
+
 /// Open a web address in the default browser.
 #[allow(dead_code)]
 pub fn open_url(url: &str) {
     if let Err(err) = imp::open_url(url) {
         log::warn!("could not open {url}: {err}");
     }
+}
+
+/// Height of the title bar the app draws its header under (0 when the system
+/// draws its own title bar, or in full screen).
+pub fn title_bar_height(window: &egui_winit::winit::window::Window) -> f32 {
+    imp::title_bar_height(window)
+}
+
+/// Room to leave on the left of the header for the window buttons.
+pub fn window_buttons_width() -> f32 {
+    imp::WINDOW_BUTTONS_WIDTH
 }
 
 /// Adjust the main window before it is created (title bar style and so on).

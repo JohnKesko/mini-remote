@@ -426,10 +426,9 @@ impl FilesPanel {
         }
     }
 
-    /// Copy a remote file or folder into the Downloads folder.
-    pub fn download(&mut self, ctx: &FilesCtx, entry: &RemoteEntry) {
+    /// Copy a remote file or folder into the `downloads` folder.
+    pub fn download(&mut self, ctx: &FilesCtx, entry: &RemoteEntry, downloads: PathBuf) {
         let Some(sftp) = self.sftp().cloned() else { return };
-        let downloads = crate::platform::download_dir();
         let remote = entry.path.clone();
         let is_dir = entry.is_dir;
         let target = if is_dir { downloads.join(&entry.name) } else { unique_path(&downloads, &entry.name) };

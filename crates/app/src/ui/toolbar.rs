@@ -30,6 +30,7 @@ const COMBOS: &[(&str, Combo)] = &[
 ];
 
 enum Action {
+    Sidebar,
     ToggleScaling,
     FullScreen,
     Combo(Combo),
@@ -85,6 +86,13 @@ pub fn show(app: &mut App, ui: &mut Ui, index: usize, area: Rect) {
             floating(&p).inner_margin(Margin::symmetric(8, 5)).corner_radius(CornerRadius::same(12)).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
+                    if !fullscreen {
+                        let tip = format!("Show or hide the menu ({})", crate::platform::shortcut_label("S"));
+                        if icon_button(ui, icon::SIDEBAR_SIMPLE, &tip).clicked() {
+                            action = Some(Action::Sidebar);
+                        }
+                        separator(ui, &p);
+                    }
                     let fit = tab.conn.scaling == Scaling::Fit;
                     let (scale_icon, scale_tip) = if fit {
                         (icon::ARROWS_OUT_SIMPLE, "Show at actual size")
@@ -114,10 +122,10 @@ pub fn show(app: &mut App, ui: &mut Ui, index: usize, area: Rect) {
                             }
                         });
                         menu(ui, icon::CLIPBOARD_TEXT, "Clipboard", |ui| {
-                            if ui.button(format!("{}  Send clipboard to the Pi", icon::ARROW_SQUARE_OUT)).clicked() {
+                            if super::widgets::menu_item(ui, icon::ARROW_SQUARE_OUT, "Send clipboard to the Pi").clicked() {
                                 action = Some(Action::PushClipboard);
                             }
-                            if ui.button(format!("{}  Type clipboard text", icon::KEYBOARD)).clicked() {
+                            if super::widgets::menu_item(ui, icon::KEYBOARD, "Type clipboard text").clicked() {
                                 action = Some(Action::TypeClipboard);
                             }
                             ui.separator();
@@ -172,6 +180,7 @@ pub fn show(app: &mut App, ui: &mut Ui, index: usize, area: Rect) {
 
     let tab = &mut app.tabs[index];
     match action {
+        Some(Action::Sidebar) => app.cycle_sidebar(),
         Some(Action::ToggleScaling) => {
             tab.conn.scaling = if tab.conn.scaling == Scaling::Fit { Scaling::Actual } else { Scaling::Fit };
             app.tab_connection_changed(index);
@@ -217,7 +226,7 @@ pub fn quality_options() -> [(Quality, &'static str); 4] {
 }
 
 fn menu(ui: &mut Ui, symbol: &str, tooltip: &str, content: impl FnOnce(&mut Ui)) {
-    let button = egui::Button::new(RichText::new(symbol).size(18.0))
+    let button = egui::Button::new(super::theme::ic(symbol).size(18.0))
         .frame_when_inactive(false)
         .corner_radius(CornerRadius::same(8))
         .min_size(vec2(32.0, 32.0));
@@ -280,7 +289,7 @@ fn info_panel(app: &mut App, ctx: &egui::Context, index: usize, bar: Rect, opaci
             floating(&p).inner_margin(Margin::same(16)).show(ui, |ui| {
                 ui.set_width(300.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Connection info").strong());
+                    ui.label(RichText::new("Connection info").font(super::theme::medium(15.0)));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if icon_button(ui, icon::X, "Close").clicked() {
                             close = true;

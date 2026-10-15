@@ -213,11 +213,10 @@ impl H264 {
             self.contexts[i].last_used = self.clock;
             return Ok(i);
         }
-        if self.contexts.len() >= MAX_CONTEXTS {
-            if let Some(oldest) = (0..self.contexts.len()).min_by_key(|&i| self.contexts[i].last_used) {
+        if self.contexts.len() >= MAX_CONTEXTS
+            && let Some(oldest) = (0..self.contexts.len()).min_by_key(|&i| self.contexts[i].last_used) {
                 self.contexts.swap_remove(oldest);
             }
-        }
         let decoder = Decoder::new().map_err(|e| invalid(format!("could not start the video decoder: {e}")))?;
         let tables = Tables::new(ColourSpace::DEFAULT);
         self.contexts.push(Context { rect, decoder, tables, last_used: self.clock });

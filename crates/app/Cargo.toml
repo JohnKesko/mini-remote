@@ -19,11 +19,14 @@ parking_lot.workspace = true
 serde.workspace = true
 serde_json = "1"
 
-# Window, input and drawing. egui-winit and egui-wgpu re-export the matching
-# winit and wgpu versions, so those are not listed separately.
+# Window, input and drawing. egui-winit re-exports the matching winit.
 egui = "0.36"
 egui-winit = { version = "0.36", default-features = false, features = ["clipboard", "links", "wayland", "x11"] }
-egui-wgpu = { version = "0.36", features = ["winit"] }
+# Without the default "macos-window-resize-jitter-fix": it holds back Metal
+# drawables during live resize and freezes the window for about a second.
+egui-wgpu = { version = "0.36", default-features = false, features = ["winit", "fragile-send-sync-non-atomic-wasm"] }
+# The same wgpu egui-wgpu uses, with its default backends (Metal on a Mac).
+wgpu = "30"
 egui-phosphor = "0.14"
 pollster = "1"
 
@@ -38,3 +41,6 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 keyring = { version = "3", features = ["apple-native"] }
 # The system "choose files" window.
 rfd = { version = "0.17", default-features = false }
+# Reading the window's title bar height for the app-drawn header.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSView", "NSWindow", "objc2-core-foundation"] }

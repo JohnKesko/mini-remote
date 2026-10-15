@@ -67,7 +67,7 @@ pub fn show(app: &mut App, ui: &mut Ui, index: usize, area: Rect) {
                         ui.label(RichText::new(explain).color(p.text_weak));
                         if let Some(err) = &prompt.error {
                             ui.add_space(4.0);
-                            ui.label(RichText::new(format!("{}  {err}", icon::WARNING_CIRCLE)).color(p.danger));
+                            super::widgets::error_line(ui, err);
                         }
                         ui.add_space(10.0);
                         let focus_id = Id::new(("credentials-focus", tab.id));
@@ -150,7 +150,7 @@ pub fn show(app: &mut App, ui: &mut Ui, index: usize, area: Rect) {
                                 "The identity code of {host} is different from last time. This happens when the Pi was set up again, but it can also mean someone is trying to listen in on your connection."
                             ));
                             ui.add_space(8.0);
-                            ui.label(RichText::new("Only continue if you know why it changed.").strong());
+                            ui.label(RichText::new("Only continue if you know why it changed.").font(super::theme::medium(14.0)));
                             ui.add_space(8.0);
                             ui.label(RichText::new("New code").small().color(p.text_weak));
                             show_code(ui, &prompt.fingerprint);
@@ -234,6 +234,8 @@ pub fn show(app: &mut App, ui: &mut Ui, index: usize, area: Rect) {
                             if !reason.message.is_empty() {
                                 ui.label(&reason.message);
                             }
+                            // Skip the general tip when the message already says what to check.
+                            let tip = tip.filter(|_| !reason.message.contains("Check"));
                             if let Some(tip) = tip {
                                 ui.add_space(4.0);
                                 hint_text(ui, tip);
@@ -276,7 +278,7 @@ pub fn show(app: &mut App, ui: &mut Ui, index: usize, area: Rect) {
 
 fn heading(ui: &mut Ui, p: &Palette, symbol: &str, color: egui::Color32, text: &str) {
     ui.horizontal(|ui| {
-        ui.label(RichText::new(symbol).size(24.0).color(color));
+        ui.label(super::theme::ic(symbol).size(24.0).color(color));
         ui.add_space(2.0);
         ui.add(egui::Label::new(RichText::new(text).heading().strong().color(p.text)).wrap());
     });

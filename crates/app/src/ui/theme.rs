@@ -1,12 +1,52 @@
 //! Colours, fonts and spacing: calm indigo accent, rounded corners, light and dark.
 
-use egui::{Color32, CornerRadius, FontFamily, FontId, Margin, Shadow, Stroke, TextStyle, Theme, Visuals};
+use std::sync::Arc;
+
+use egui::{
+    Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, FontTweak, Margin, Shadow, Stroke, TextStyle,
+    Theme, Visuals,
+};
+
+/// Inter (SIL Open Font License), bundled with the app.
+const INTER_REGULAR: &[u8] = include_bytes!("../../../../assets/fonts/Inter-Regular.ttf");
+const INTER_MEDIUM: &[u8] = include_bytes!("../../../../assets/fonts/Inter-Medium.ttf");
+const INTER_SEMIBOLD: &[u8] = include_bytes!("../../../../assets/fonts/Inter-SemiBold.ttf");
+
+/// Font family names for the heavier Inter weights, and for icons.
+const MEDIUM: &str = "Medium";
+const SEMIBOLD: &str = "SemiBold";
+const ICONS: &str = "Icons";
+
+/// The icon font (Phosphor). Icons need their own family because Inter has
+/// glyphs of its own at some of the same code points.
+pub fn icon_font(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(ICONS.into()))
+}
+
+/// An icon as text, for labels and buttons.
+pub fn ic(icon: &str) -> egui::RichText {
+    egui::RichText::new(icon).family(FontFamily::Name(ICONS.into()))
+}
+
+/// Inter at medium weight (tab labels, card titles, buttons).
+pub fn medium(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(MEDIUM.into()))
+}
+
+/// Inter at semi-bold weight (titles).
+pub fn semibold(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(SEMIBOLD.into()))
+}
 
 /// The one accent colour.
 pub const ACCENT: Color32 = Color32::from_rgb(0x55, 0x5c, 0xe0);
 const ACCENT_DARK_MODE: Color32 = Color32::from_rgb(0x7c, 0x83, 0xf2);
 
 pub const RADIUS: u8 = 10;
+/// Height shared by buttons, text fields, drop-downs and segmented controls.
+pub const CONTROL_HEIGHT: f32 = 32.0;
+/// Height of small controls (header buttons, card footers).
+pub const SMALL_HEIGHT: f32 = 28.0;
 pub const RADIUS_SMALL: u8 = 8;
 
 /// Colours used by the app's own widgets.
@@ -84,11 +124,36 @@ pub fn title_style() -> TextStyle {
     TextStyle::Name("Title".into())
 }
 
+/// Inter first, then egui's own fonts and the icon font as fallbacks
+/// (for emoji, symbols and icons). Monospace stays egui's Hack.
+fn fonts() -> FontDefinitions {
+    let mut fonts = FontDefinitions::default();
+    // Inter sits a little high in its line box; nudge it down so text looks
+    // centred in buttons and fields.
+    let tweak = FontTweak { y_offset_factor: 0.04, ..FontTweak::default() };
+    for (name, bytes) in [("Inter", INTER_REGULAR), ("Inter-Medium", INTER_MEDIUM), ("Inter-SemiBold", INTER_SEMIBOLD)] {
+        fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(bytes).tweak(tweak.clone())));
+    }
+    if let Some(list) = fonts.families.get_mut(&FontFamily::Proportional) {
+        list.insert(0, "Inter".into());
+    }
+    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+    let fallbacks: Vec<String> = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .map(|l| l.iter().filter(|n| n.as_str() != "Inter").cloned().collect())
+        .unwrap_or_default();
+    for (family, font) in [(MEDIUM, "Inter-Medium"), (SEMIBOLD, "Inter-SemiBold"), (ICONS, "phosphor")] {
+        let mut list = vec![font.to_string()];
+        list.extend(fallbacks.iter().filter(|n| n.as_str() != font).cloned());
+        fonts.families.insert(FontFamily::Name(family.into()), list);
+    }
+    fonts
+}
+
 /// Set up fonts and the look for both light and dark mode.
 pub fn install(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
-    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-    ctx.set_fonts(fonts);
+    ctx.set_fonts(fonts());
 
     for (theme, palette) in [(Theme::Light, Palette::light()), (Theme::Dark, Palette::dark())] {
         ctx.style_mut_of(theme, |style| {
@@ -96,16 +161,16 @@ pub fn install(ctx: &egui::Context) {
             style.text_styles = [
                 (TextStyle::Small, FontId::new(12.0, FontFamily::Proportional)),
                 (TextStyle::Body, FontId::new(14.0, FontFamily::Proportional)),
-                (TextStyle::Button, FontId::new(14.0, FontFamily::Proportional)),
-                (TextStyle::Heading, FontId::new(19.0, FontFamily::Proportional)),
-                (TextStyle::Monospace, FontId::new(13.5, FontFamily::Monospace)),
-                (title_style(), FontId::new(26.0, FontFamily::Proportional)),
+                (TextStyle::Button, medium(14.0)),
+                (TextStyle::Heading, semibold(20.0)),
+                (TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace)),
+                (title_style(), semibold(27.0)),
             ]
             .into();
             let s = &mut style.spacing;
             s.item_spacing = egui::vec2(8.0, 8.0);
-            s.button_padding = egui::vec2(12.0, 6.0);
-            s.interact_size.y = 30.0;
+            s.button_padding = egui::vec2(12.0, 4.0);
+            s.interact_size.y = CONTROL_HEIGHT;
             s.window_margin = Margin::same(20);
             s.menu_margin = Margin::same(6);
             s.combo_width = 200.0;
@@ -113,6 +178,11 @@ pub fn install(ctx: &egui::Context) {
             s.icon_width = 16.0;
             s.icon_width_inner = 9.0;
             style.interaction.tooltip_delay = 0.4;
+            if super::widgets::debug_layout() {
+                // Outline every widget and flag anything not on whole pixels.
+                style.debug.show_interactive_widgets = true;
+                style.debug.show_unaligned = true;
+            }
             // Labels are not selectable, so clicks reach the cards around them.
             style.interaction.selectable_labels = false;
         });
@@ -138,6 +208,8 @@ fn visuals(p: &Palette) -> Visuals {
     v.error_fg_color = p.danger;
     v.warn_fg_color = p.warning;
     v.text_cursor.stroke = Stroke::new(2.0, p.accent);
+    v.text_options.font_hinting = true;
+    v.text_options.color_transfer_function = text_transfer(p.dark);
 
     let w = &mut v.widgets;
     w.noninteractive.bg_fill = p.surface;
@@ -174,4 +246,28 @@ fn visuals(p: &Palette) -> Visuals {
     w.open.fg_stroke = Stroke::new(1.0, p.text);
     w.open.corner_radius = r;
     v
+}
+
+/// How glyph coverage turns into text opacity: a steeper curve keeps light
+/// text on dark backgrounds from looking thin, a gentle one keeps dark text on
+/// light backgrounds firm without looking bold. Debug builds can try others with
+/// `MINI_REMOTE_TEXT_TRANSFER=off|tcmcs|gamma:<value>`.
+fn text_transfer(dark: bool) -> egui::epaint::FontColorTransferFunction {
+    use egui::epaint::FontColorTransferFunction as F;
+    if cfg!(debug_assertions)
+        && let Ok(v) = std::env::var("MINI_REMOTE_TEXT_TRANSFER")
+    {
+        match v.as_str() {
+            "off" => return F::Off,
+            "tcmcs" => return F::TwoCoverageMinusCoverageSq,
+            other => {
+                if let Some(g) = other.strip_prefix("gamma:").and_then(|g| g.parse().ok()) {
+                    return F::Gamma(g);
+                }
+            }
+        }
+    }
+    // Chosen by comparing zoomed screenshots: plain coverage looks washed out
+    // for dark-on-light text, the full curve a little heavy; 0.7 is in between.
+    if dark { F::TwoCoverageMinusCoverageSq } else { F::Gamma(0.7) }
 }

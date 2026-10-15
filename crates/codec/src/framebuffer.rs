@@ -71,7 +71,7 @@ pub struct Framebuffer {
 impl Framebuffer {
     pub fn new(width: u16, height: u16) -> Self {
         let mut data = vec![0u8; width as usize * height as usize * 4];
-        for px in data.chunks_exact_mut(4) {
+        for px in data.as_chunks_mut::<4>().0 {
             px[3] = 255;
         }
         Framebuffer { width, height, data, dirty: vec![Rect::new(0, 0, width, height)] }
@@ -151,7 +151,7 @@ impl Framebuffer {
         for y in c.y as usize..c.bottom() as usize {
             let start = y * stride + c.x as usize * 4;
             let row = &mut self.data[start..start + c.w as usize * 4];
-            for px in row.chunks_exact_mut(4) {
+            for px in row.as_chunks_mut::<4>().0 {
                 px.copy_from_slice(&rgba);
             }
         }

@@ -33,6 +33,7 @@ impl RemoteTexture {
 
         let resized = slot.as_ref().is_none_or(|t| t.width != w || t.height != h);
         if resized {
+            log::info!("remote picture texture is now {w}x{h}");
             let filter = slot.as_ref().map_or(wgpu::FilterMode::Linear, |t| t.filter);
             let (texture, view) = create(gpu, w, h);
             match slot {

@@ -75,10 +75,34 @@ pub fn open_url(url: &str) -> io::Result<()> {
 
 pub fn window_attributes(attrs: WindowAttributes) -> WindowAttributes {
     use egui_winit::winit::platform::macos::{OptionAsAlt, WindowAttributesExtMacOS};
-    // Keep Option producing characters like @ and { on European keyboards; the
-    // keyboard code decides when Option should act as Alt instead.
-    attrs.with_option_as_alt(OptionAsAlt::None)
+    attrs
+        // Keep Option producing characters like @ and { on European keyboards;
+        // the keyboard code decides when Option should act as Alt instead.
+        .with_option_as_alt(OptionAsAlt::None)
+        // The app draws its own header in its own colours; the window buttons
+        // stay where they are, on top of it.
+        .with_titlebar_transparent(true)
+        .with_fullsize_content_view(true)
+        .with_title_hidden(true)
 }
+
+/// Height of the (transparent) title bar the app draws under, in points.
+/// 0 in full screen, where the window buttons are gone.
+pub fn title_bar_height(window: &egui_winit::winit::window::Window) -> f32 {
+    use egui_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(handle) = window.window_handle() else { return 0.0 };
+    let RawWindowHandle::AppKit(appkit) = handle.as_raw() else { return 0.0 };
+    // SAFETY: winit hands out a valid NSView for as long as the window lives,
+    // and this is only called on the main thread while the window exists.
+    let view: &objc2_app_kit::NSView = unsafe { appkit.ns_view.cast().as_ref() };
+    let Some(ns_window) = view.window() else { return 0.0 };
+    let frame = ns_window.frame();
+    let content = ns_window.contentLayoutRect();
+    (frame.size.height - content.size.height).max(0.0) as f32
+}
+
+/// Room to leave on the left of the header for the window buttons.
+pub const WINDOW_BUTTONS_WIDTH: f32 = 78.0;
 
 /// Mac ISO (European) keyboards report the key left of 1 and the key next to
 /// left Shift the other way round compared to PC keyboards. Swap them back so
@@ -100,6 +124,11 @@ fn is_iso_keyboard() -> bool {
     const KEYBOARD_ISO: u32 = u32::from_be_bytes(*b"ISO ");
     // SAFETY: plain system queries without pointers or lifetimes involved.
     unsafe { KBGetLayoutType(i16::from(LMGetKbdType())) == KEYBOARD_ISO }
+}
+
+/// Let the user choose a folder.
+pub async fn pick_folder(title: &str) -> Option<std::path::PathBuf> {
+    rfd::AsyncFileDialog::new().set_title(title).pick_folder().await.map(|f| f.path().to_path_buf())
 }
 
 /// Let the user choose files or folders to copy to the remote computer.

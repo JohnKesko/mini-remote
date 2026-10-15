@@ -54,8 +54,21 @@ struct Runner {
     error: Option<String>,
 }
 
+/// Test aid (`MINI_REMOTE_RESIZE_TEST=1`): resize the window on every frame
+/// and log how long each frame took.
+struct ResizeTest {
+    /// The test waits until then (the value of the variable, in seconds).
+    start: Instant,
+    frames: u32,
+    last: Option<Instant>,
+    times: Vec<f64>,
+}
+
+const RESIZE_TEST_FRAMES: u32 = 300;
+
 struct State {
     window: Arc<Window>,
+    resize_test: Option<ResizeTest>,
     ctx: egui::Context,
     egui_state: egui_winit::State,
     painter: Painter,
@@ -68,8 +81,8 @@ impl Runner {
     fn init(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
         let attrs = Window::default_attributes()
             .with_title("Mini Remote")
-            .with_inner_size(LogicalSize::new(1180.0, 760.0))
-            .with_min_inner_size(LogicalSize::new(640.0, 440.0));
+            .with_inner_size(LogicalSize::new(1280.0, 820.0))
+            .with_min_inner_size(LogicalSize::new(720.0, 480.0));
         let attrs = crate::platform::window_attributes(attrs);
         let window = Arc::new(event_loop.create_window(attrs).map_err(|e| e.to_string())?);
 
@@ -107,9 +120,14 @@ impl Runner {
             }
         });
 
-        let app = App::new(ctx.clone(), gpu, wake, self.connect.take());
+        let mut app = App::new(ctx.clone(), gpu, wake, self.connect.take());
+        app.set_title_bar_height(crate::platform::title_bar_height(&window));
         window.request_redraw();
-        self.state = Some(State { window, ctx, egui_state, painter, app, resizing: false });
+        let resize_test = std::env::var("MINI_REMOTE_RESIZE_TEST").ok().filter(|v| !v.is_empty() && v != "0").map(|v| {
+            let delay = v.parse::<f64>().ok().filter(|d| *d > 1.0).unwrap_or(0.0);
+            ResizeTest { start: Instant::now() + Duration::from_secs_f64(delay), frames: 0, last: None, times: Vec::new() }
+        });
+        self.state = Some(State { window, resize_test, ctx, egui_state, painter, app, resizing: false });
         Ok(())
     }
 }
@@ -171,6 +189,7 @@ impl ApplicationHandler<UserEvent> for Runner {
                     state.painter.on_window_resized(ViewportId::ROOT, w, h);
                 }
                 state.app.sync_fullscreen(state.window.fullscreen().is_some());
+                state.app.set_title_bar_height(crate::platform::title_bar_height(&state.window));
             }
             WindowEvent::Focused(focused) => {
                 // winit can report focus wrongly on macOS; ask the window instead.
@@ -222,6 +241,37 @@ impl ApplicationHandler<UserEvent> for Runner {
 }
 
 impl State {
+    fn resize_test_step(&mut self) {
+        let Some(test) = &mut self.resize_test else { return };
+        let now = Instant::now();
+        if now < test.start {
+            self.window.request_redraw();
+            return;
+        }
+        if let Some(last) = test.last {
+            let ms = now.duration_since(last).as_secs_f64() * 1000.0;
+            test.times.push(ms);
+            if ms > 50.0 {
+                log::warn!("resize test: frame {} took {ms:.1} ms", test.frames);
+            }
+        }
+        test.last = Some(now);
+        if test.frames >= RESIZE_TEST_FRAMES {
+            let n = test.times.len().max(1) as f64;
+            let min = test.times.iter().cloned().fold(f64::MAX, f64::min);
+            let max = test.times.iter().cloned().fold(0.0, f64::max);
+            let avg = test.times.iter().sum::<f64>() / n;
+            let slow = test.times.iter().filter(|t| **t > 50.0).count();
+            log::info!("resize test done: {} frames, min {min:.1} ms, avg {avg:.1} ms, max {max:.1} ms, {slow} over 50 ms", test.times.len());
+            self.resize_test = None;
+            return;
+        }
+        test.frames += 1;
+        let (w, h) = if test.frames % 2 == 0 { (1200.0, 780.0) } else { (1236.0, 804.0) };
+        let _ = self.window.request_inner_size(LogicalSize::new(w, h));
+        self.window.request_redraw();
+    }
+
     fn paint(&mut self, event_loop: &ActiveEventLoop, next_repaint: &mut Option<Instant>) {
         let raw_input = self.egui_state.take_egui_input(&self.window);
         let app = &mut self.app;
@@ -253,11 +303,29 @@ impl State {
             }
         }
 
+        self.resize_test_step();
+
         for request in self.app.take_window_requests() {
             match request {
                 WindowRequest::Title(title) => self.window.set_title(&title),
                 WindowRequest::Fullscreen(on) => {
                     self.window.set_fullscreen(on.then_some(Fullscreen::Borderless(None)));
+                }
+                WindowRequest::Theme(appearance) => {
+                    use crate::model::Appearance;
+                    let theme = match appearance {
+                        Some(Appearance::Light) => Some(winit::window::Theme::Light),
+                        Some(Appearance::Dark) => Some(winit::window::Theme::Dark),
+                        _ => None,
+                    };
+                    self.window.set_theme(theme);
+                }
+                WindowRequest::Drag => {
+                    let _ = self.window.drag_window();
+                }
+                WindowRequest::ToggleZoom => self.window.set_maximized(!self.window.is_maximized()),
+                WindowRequest::Size(w, h) => {
+                    let _ = self.window.request_inner_size(LogicalSize::new(w, h));
                 }
             }
         }

@@ -28,6 +28,9 @@ use crate::texture::RemoteTexture;
 const RESIZE_DELAY: Duration = Duration::from_millis(300);
 /// Save a thumbnail this long after the first picture arrives.
 const THUMBNAIL_DELAY: Duration = Duration::from_secs(4);
+/// The server sends its old clipboard right after connecting; ignore that,
+/// so connecting never replaces what is on this computer's clipboard.
+const CLIPBOARD_SETTLE: Duration = Duration::from_millis(1500);
 
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
 
@@ -173,6 +176,7 @@ pub struct SessionTab {
     remember_after_login: Vec<(String, String)>,
     need_username: bool,
     ever_connected: bool,
+    connected_at: Option<Instant>,
     attempt: u32,
     resize: ResizeState,
     /// Size of the view area in screen pixels (set by the view every frame).
@@ -221,6 +225,7 @@ impl SessionTab {
             remember_after_login: Vec::new(),
             need_username: false,
             ever_connected: false,
+            connected_at: None,
             attempt: 0,
             resize: ResizeState::default(),
             view_pixels: None,
@@ -257,6 +262,7 @@ impl SessionTab {
         self.physical_keys = false;
         self.closing = false;
         self.failed_in_ssh = false;
+        self.connected_at = None;
 
         if self.conn.ssh.enabled {
             self.open_tunnel(env);
@@ -431,6 +437,7 @@ impl SessionTab {
                 self.status = Status::Connected;
                 self.prompt = None;
                 self.ever_connected = true;
+                self.connected_at = Some(Instant::now());
                 self.attempt = 0;
                 self.thumbnail_due = Some(Instant::now() + THUMBNAIL_DELAY);
                 self.server = Some(info);
@@ -453,7 +460,10 @@ impl SessionTab {
                 self.cursor.changed = true;
             }
             Event::Clipboard(text) => {
-                if self.conn.share_clipboard && env.settings.share_clipboard {
+                let settled = self.connected_at.is_some_and(|t| t.elapsed() >= CLIPBOARD_SETTLE);
+                if !settled {
+                    log::debug!("ignoring the clipboard the server had before we connected");
+                } else if self.conn.share_clipboard && env.settings.share_clipboard {
                     notices.push(Notice::RemoteClipboard(text));
                 }
             }
@@ -632,6 +642,7 @@ impl SessionTab {
         }
         if now.duration_since(since) >= RESIZE_DELAY {
             self.resize.sent = Some(wanted);
+            log::info!("asking for a {}x{} screen", wanted.0, wanted.1);
             self.send(Command::SetDesktopSize { width: wanted.0, height: wanted.1 });
             None
         } else {

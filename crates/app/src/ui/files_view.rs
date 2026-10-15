@@ -2,8 +2,8 @@
 //! and copy files both ways.
 
 use egui::{
-    Align, Align2, Area, Color32, CornerRadius, FontId, Id, Key, Layout, Margin, Order, Rect, RichText, Sense, Ui,
-    pos2, vec2,
+    Align, Align2, Area, CornerRadius, Id, Key, Layout, Margin, Order, Rect, RichText, Ui,
+    pos2,
 };
 use ssh::RemoteEntry;
 
@@ -57,16 +57,21 @@ pub fn show(app: &mut App, ctx: &egui::Context, index: usize, area: Rect) {
             floating(&p).inner_margin(Margin::same(14)).show(ui, |ui| {
                 ui.set_width(WIDTH);
                 ui.set_height(height);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(icon::FOLDER_OPEN).size(20.0).color(p.accent));
-                    ui.add(egui::Label::new(RichText::new(format!("Files on {name}")).strong().size(15.0)).truncate());
+                super::widgets::row(ui, 32.0, |ui| {
+                    let (mark, _) = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
+                    let center = super::widgets::snap(ui, mark.center());
+                    ui.painter().text(center, Align2::CENTER_CENTER, icon::FOLDER_OPEN, super::theme::icon_font(19.0), p.accent);
+                    let title = super::widgets::truncated(ui, &format!("Files on {name}"), super::theme::semibold(15.0), p.text, WIDTH - 32.0 - 32.0 - 24.0);
+                    // Text column shared with the list below (see `list_row`).
+                    let x = mark.left() + super::widgets::LIST_TEXT_COLUMN;
+                    super::widgets::paint_left_center(ui, title, x, mark.center().y, p.text);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if icon_button(ui, icon::X, "Close").clicked() {
                             actions.push(Action::Close);
                         }
                     });
                 });
-                ui.add_space(4.0);
+                ui.add_space(8.0);
 
                 match &files.conn {
                     FilesConn::Idle | FilesConn::Connecting => {
@@ -79,7 +84,7 @@ pub fn show(app: &mut App, ctx: &egui::Context, index: usize, area: Rect) {
                     FilesConn::NeedLogin => {
                         hint_text(ui, "Log in to the Pi's secure remote login (SSH) to copy files. This is usually the same username and password you use on the Pi.");
                         if let Some(err) = &files.login.error {
-                            ui.label(RichText::new(format!("{}  {err}", icon::WARNING_CIRCLE)).color(p.danger));
+                            super::widgets::error_line(ui, err);
                         }
                         ui.add_space(4.0);
                         super::widgets::field_label(ui, "Username");
@@ -94,7 +99,7 @@ pub fn show(app: &mut App, ctx: &egui::Context, index: usize, area: Rect) {
                     }
                     FilesConn::Failed { message, ssh_off } => {
                         ui.add_space(8.0);
-                        ui.label(RichText::new(format!("{}  {message}", icon::WARNING_CIRCLE)).color(p.danger));
+                        super::widgets::error_line(ui, message);
                         if *ssh_off {
                             ui.add_space(4.0);
                             hint_text(ui, SSH_OFF_HINT);
@@ -139,8 +144,9 @@ pub fn show(app: &mut App, ctx: &egui::Context, index: usize, area: Rect) {
 
 fn ready(ui: &mut Ui, p: &Palette, files: &mut crate::files::FilesPanel, hovering: bool, actions: &mut Vec<Action>) {
     // Where we are.
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
+    super::widgets::row(ui, 32.0, |ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.spacing_mut().button_padding.x = super::widgets::LIST_TEXT_COLUMN - 32.0;
         ui.add_enabled_ui(crate::files::parent_dir(&files.cwd).is_some(), |ui| {
             if icon_button(ui, icon::ARROW_UP, "Up one folder").clicked() {
                 actions.push(Action::Up);
@@ -152,7 +158,7 @@ fn ready(ui: &mut Ui, p: &Palette, files: &mut crate::files::FilesPanel, hoverin
             ui.horizontal(|ui| {
                 for (i, (label, path)) in crumbs.into_iter().enumerate() {
                     if i > 0 {
-                        ui.label(RichText::new(icon::CARET_RIGHT).size(11.0).color(p.text_weak));
+                        ui.label(super::theme::ic(icon::CARET_RIGHT).size(11.0).color(p.text_weak));
                     }
                     let text = if i == last { RichText::new(label).strong() } else { RichText::new(label).color(p.text_weak) };
                     if ui.add(egui::Button::new(text).frame_when_inactive(false).small()).clicked() && i != last {
@@ -171,15 +177,15 @@ fn ready(ui: &mut Ui, p: &Palette, files: &mut crate::files::FilesPanel, hoverin
     });
 
     // What can be done.
-    ui.add_space(2.0);
+    ui.add_space(8.0);
     let selected = files.selected.as_ref().and_then(|s| files.entries.iter().find(|e| &e.path == s)).cloned();
-    ui.horizontal(|ui| {
+    super::widgets::row(ui, 32.0, |ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        if primary_button(ui, format!("{}  Upload", icon::UPLOAD_SIMPLE)).on_hover_text("Copy files from this computer to the Pi").clicked() {
+        if super::widgets::primary_icon_button(ui, icon::UPLOAD_SIMPLE, "Upload").on_hover_text("Copy files from this computer to the Pi").clicked() {
             actions.push(Action::Upload);
         }
         ui.add_enabled_ui(selected.is_some(), |ui| {
-            if icon_button(ui, icon::DOWNLOAD_SIMPLE, "Copy to your Downloads folder").clicked()
+            if icon_button(ui, icon::DOWNLOAD_SIMPLE, "Copy to this computer").clicked()
                 && let Some(e) = &selected
             {
                 actions.push(Action::Download(e.clone()));
@@ -214,7 +220,7 @@ fn ready(ui: &mut Ui, p: &Palette, files: &mut crate::files::FilesPanel, hoverin
         name_row(ui, name, "New name", move |n| Action::Rename(path, n), actions);
     }
     if let Some(err) = &files.error {
-        ui.label(RichText::new(format!("{}  {err}", icon::WARNING_CIRCLE)).color(p.danger).size(12.5));
+        super::widgets::error_line(ui, err);
     }
     ui.add_space(2.0);
 
@@ -224,7 +230,7 @@ fn ready(ui: &mut Ui, p: &Palette, files: &mut crate::files::FilesPanel, hoverin
     egui::Frame::new()
         .fill(if hovering { p.accent_soft } else { p.surface_alt })
         .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::same(4))
+        .inner_margin(Margin::symmetric(0, 4))
         .show(ui, |ui| {
             egui::ScrollArea::vertical().id_salt("files-list").max_height(list_height).auto_shrink([false, false]).show(ui, |ui| {
                 if files.entries.is_empty() && !files.loading {
@@ -245,16 +251,16 @@ fn ready(ui: &mut Ui, p: &Palette, files: &mut crate::files::FilesPanel, hoverin
                         actions.push(Action::Select(entry.path.clone()));
                     }
                     r.context_menu(|ui| {
-                        if entry.is_dir && ui.button(format!("{}  Open", icon::FOLDER_OPEN)).clicked() {
+                        if entry.is_dir && super::widgets::menu_item(ui, icon::FOLDER_OPEN, "Open").clicked() {
                             actions.push(Action::Open(entry.path.clone()));
                         }
-                        if ui.button(format!("{}  Download", icon::DOWNLOAD_SIMPLE)).clicked() {
+                        if super::widgets::menu_item(ui, icon::DOWNLOAD_SIMPLE, "Download").clicked() {
                             actions.push(Action::Download(entry.clone()));
                         }
-                        if ui.button(format!("{}  Rename", icon::PENCIL_SIMPLE)).clicked() {
+                        if super::widgets::menu_item(ui, icon::PENCIL_SIMPLE, "Rename").clicked() {
                             actions.push(Action::StartRename(entry.clone()));
                         }
-                        if ui.button(RichText::new(format!("{}  Delete", icon::TRASH)).color(p.danger)).clicked() {
+                        if super::widgets::danger_menu_item(ui, icon::TRASH, "Delete").clicked() {
                             actions.push(Action::AskDelete(entry.clone()));
                         }
                     });
@@ -267,7 +273,7 @@ fn ready(ui: &mut Ui, p: &Palette, files: &mut crate::files::FilesPanel, hoverin
     for t in &files.transfers {
         ui.horizontal(|ui| {
             let arrow = if t.upload { icon::UPLOAD_SIMPLE } else { icon::DOWNLOAD_SIMPLE };
-            ui.label(RichText::new(arrow).color(p.text_weak));
+            ui.label(super::theme::ic(arrow).color(p.text_weak));
             ui.vertical(|ui| {
                 ui.set_width(WIDTH - 70.0);
                 ui.spacing_mut().item_spacing.y = 2.0;
@@ -306,7 +312,8 @@ fn ready(ui: &mut Ui, p: &Palette, files: &mut crate::files::FilesPanel, hoverin
 }
 
 fn name_row(ui: &mut Ui, name: &mut String, hint: &str, done: impl FnOnce(String) -> Action, actions: &mut Vec<Action>) {
-    ui.horizontal(|ui| {
+    ui.add_space(8.0);
+    super::widgets::row(ui, 32.0, |ui| {
         let r = ui.add(text_field(name, hint).desired_width(WIDTH - 110.0));
         if !r.has_focus() && !r.lost_focus() && name.is_empty() {
             r.request_focus();
@@ -322,33 +329,15 @@ fn name_row(ui: &mut Ui, name: &mut String, hint: &str, done: impl FnOnce(String
 }
 
 fn row(ui: &mut Ui, p: &Palette, entry: &RemoteEntry, selected: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
-    if ui.is_rect_visible(rect) {
-        let fill = if selected {
-            p.accent.gamma_multiply(if p.dark { 0.35 } else { 0.18 })
-        } else if response.hovered() {
-            p.border.gamma_multiply(0.6)
-        } else {
-            Color32::TRANSPARENT
-        };
-        ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
-        let symbol = file_icon(entry);
-        let icon_color = if entry.is_dir { p.accent } else { p.text_weak };
-        ui.painter().text(pos2(rect.left() + 16.0, rect.center().y), Align2::CENTER_CENTER, symbol, FontId::proportional(17.0), icon_color);
-
-        let right_text = if entry.is_dir { String::new() } else { format_size(entry.size) };
-        let date = entry.modified.map(format_date).unwrap_or_default();
-        let info = if right_text.is_empty() { date } else if date.is_empty() { right_text } else { format!("{right_text} · {date}") };
-        let info_galley = ui.painter().layout_no_wrap(info, FontId::proportional(11.5), p.text_weak);
-        let info_x = rect.right() - 8.0 - info_galley.size().x;
-        let name_width = (info_x - (rect.left() + 32.0) - 8.0).max(40.0);
-        let mut job = egui::text::LayoutJob::simple_singleline(entry.name.clone(), FontId::proportional(13.5), p.text);
-        job.wrap = egui::text::TextWrapping::truncate_at_width(name_width);
-        let name_galley = ui.painter().layout_job(job);
-        ui.painter().galley(pos2(rect.left() + 32.0, rect.center().y - name_galley.size().y / 2.0), name_galley, p.text);
-        ui.painter().galley(pos2(info_x, rect.center().y - info_galley.size().y / 2.0), info_galley, p.text_weak);
-    }
-    response
+    let size = if entry.is_dir { String::new() } else { format_size(entry.size) };
+    let date = entry.modified.map(format_date).unwrap_or_default();
+    let detail = match (size.is_empty(), date.is_empty()) {
+        (true, _) => date,
+        (false, true) => size,
+        (false, false) => format!("{size} · {date}"),
+    };
+    let icon_color = if entry.is_dir { p.accent } else { p.text_weak };
+    super::widgets::list_row(ui, file_icon(entry), icon_color, &entry.name, &detail, selected)
 }
 
 fn file_icon(entry: &RemoteEntry) -> &'static str {
@@ -387,15 +376,23 @@ fn apply(app: &mut App, index: usize, action: Action) {
             app.connect_files(index);
         }
         Action::Login => {
-            app.tabs[index].files.use_login_form();
-            app.connect_files(index);
+            let files = &mut app.tabs[index].files;
+            if files.login.username.trim().is_empty() {
+                files.login.error = Some("Please type the Pi's username.".into());
+            } else {
+                files.use_login_form();
+                app.connect_files(index);
+            }
         }
         Action::Open(path) => app.with_files(index, |f, ctx| f.list(ctx, path)),
         Action::Up => app.with_files(index, |f, ctx| f.go_up(ctx)),
         Action::Refresh => app.with_files(index, |f, ctx| f.refresh(ctx)),
         Action::Select(path) => app.tabs[index].files.selected = Some(path),
         Action::Upload => app.with_files(index, |f, ctx| f.pick_upload(ctx)),
-        Action::Download(entry) => app.with_files(index, |f, ctx| f.download(ctx, &entry)),
+        Action::Download(entry) => {
+            let folder = app.settings.download_folder();
+            app.with_files(index, |f, ctx| f.download(ctx, &entry, folder));
+        }
         Action::StartNewFolder => {
             let f = &mut app.tabs[index].files;
             f.rename = None;

@@ -1,98 +1,143 @@
-//! The settings window.
+//! The Settings page: grouped cards with one setting per row. Changes are
+//! saved right away.
 
-use egui::{Align, ComboBox, Id, Layout, RichText};
+use egui::{ComboBox, Response, RichText, Ui};
 
-use super::theme::Palette;
+use super::home::page;
+use super::icon;
+use super::theme::{Palette, medium};
 use super::toolbar::quality_options;
-use super::widgets::{floating, hint_text, primary_button, section_title, segmented, toggle_row};
+use super::widgets::{row_divider, row_hint, section_card, secondary_button, segmented, setting_row, toggle};
 use crate::app::App;
 use crate::model::{AltMapping, Appearance, KeyboardMode, MetaMapping};
+use rfb::Quality;
 
 /// Plain-English help for letters that don't arrive on the Pi.
-pub const LAYOUT_HINT: &str = "If letters like å, ä or ö don't appear on the Pi, its screen sharing needs to know your keyboard layout: add a line such as xkb_layout=se (se for Swedish, de for German, fr for French) to the file /etc/wayvnc/config on the Pi and restart it.";
+pub const LAYOUT_HINT: &str =
+    "If å, ä, ö don't appear on the Pi, set its keyboard layout for screen sharing: add xkb_layout=se to /etc/wayvnc/config.";
 
-pub fn show(app: &mut App, ctx: &egui::Context) {
-    if !app.settings_open {
-        return;
-    }
-    let p = Palette::of(ctx);
-    let before = app.settings.clone();
-    let mut close = false;
-    let s = &mut app.settings;
+const SETTINGS_WIDTH: f32 = 640.0;
 
-    let modal = egui::Modal::new(Id::new("settings")).frame(floating(&p)).show(ctx, |ui| {
-        ui.set_width(480.0);
-        ui.label(RichText::new("Settings").heading().strong());
-        ui.add_space(4.0);
-        egui::ScrollArea::vertical().max_height((ctx.content_rect().height() - 200.0).max(240.0)).show(ui, |ui| {
-            ui.set_width(ui.available_width() - 12.0);
-            section_title(ui, "Appearance");
-            segmented(ui, &mut s.appearance, &[(Appearance::System, "Same as system"), (Appearance::Light, "Light"), (Appearance::Dark, "Dark")]);
-
-            section_title(ui, "Keyboard");
-            ui.horizontal(|ui| {
-                ui.label(format!("{} key sends", crate::platform::meta_key_label()));
-                segmented(ui, &mut s.meta_key, &[(MetaMapping::Control, "Control"), (MetaMapping::Super, "Windows key")]);
-            });
-            if cfg!(target_os = "macos") {
-                hint_text(ui, "With Control, ⌘C, ⌘V, ⌘X, ⌘Z and ⌘S work on the Pi just like on your Mac.");
+/// A drop-down for picture quality, as tall as the other controls.
+pub fn quality_combo(ui: &mut Ui, id: &str, value: &mut Quality) -> Response {
+    let current = quality_options().iter().find(|(q, _)| *q == *value).map(|(_, l)| *l).unwrap_or("");
+    let short = current.split(" (").next().unwrap_or(current);
+    ComboBox::from_id_salt(id)
+        .selected_text(short)
+        .width(160.0)
+        .show_ui(ui, |ui| {
+            for (q, label) in quality_options() {
+                ui.selectable_value(value, q, label);
             }
-            ui.add_space(2.0);
-            ui.horizontal(|ui| {
-                ui.label(format!("{} key sends", crate::platform::alt_key_label()));
-                segmented(ui, &mut s.alt_key, &[(AltMapping::Alt, "Alt"), (AltMapping::AltGr, "AltGr")]);
-            });
-            hint_text(ui, "Characters such as @ and { that you type with this key still arrive as typed.");
-            ui.add_space(2.0);
-            ui.horizontal(|ui| {
-                ui.label("Keyboard for new connections");
-                segmented(ui, &mut s.keyboard_mode, &[(KeyboardMode::Characters, "Characters"), (KeyboardMode::Physical, "Physical keys")]);
-            });
-            ui.add_space(2.0);
-            hint_text(ui, LAYOUT_HINT);
-            hint_text(ui, &format!(
-                "Shortcuts for Mini Remote itself: {} full screen, {} close tab, {} / {} switch tabs. Everything else goes to the Pi.",
-                crate::platform::shortcut_label("F"),
-                crate::platform::shortcut_label("W"),
-                crate::platform::shortcut_label("Left Arrow"),
-                crate::platform::shortcut_label("Right Arrow"),
-            ));
+        })
+        .response
+}
 
-            section_title(ui, "Clipboard");
-            toggle_row(ui, &mut s.share_clipboard, "Share the clipboard with the Pi", Some("Each connection can also turn this off."));
+pub fn page_ui(app: &mut App, ui: &mut Ui) {
+    let p = Palette::of(ui.ctx());
+    let before = app.settings.clone();
+    let mut choose_folder = false;
+    let download_folder = app.settings.download_folder();
 
-            section_title(ui, "Picture");
-            ui.horizontal(|ui| {
-                ui.label("Quality for new connections");
-                let current = quality_options().iter().find(|(q, _)| *q == s.default_quality).map(|(_, l)| *l).unwrap_or("");
-                ComboBox::from_id_salt("settings-quality").selected_text(current).width(240.0).show_ui(ui, |ui| {
-                    for (q, label) in quality_options() {
-                        ui.selectable_value(&mut s.default_quality, q, label);
-                    }
-                });
+    page(ui, "settings-page", SETTINGS_WIDTH, |ui, _| {
+        let s = &mut app.settings;
+        ui.add_space(-24.0);
+
+        section_card(ui, icon::PALETTE, "Appearance", |ui| {
+            setting_row(ui, "Theme", Some("Light or dark, or follow the Mac."), |ui| {
+                let options = [(Appearance::System, "System"), (Appearance::Light, "Light"), (Appearance::Dark, "Dark")];
+                segmented(ui, &mut s.appearance, &options)
             });
-
-            section_title(ui, "Connection");
-            toggle_row(ui, &mut s.auto_reconnect, "Reconnect automatically", Some("If the network drops, Mini Remote keeps trying and shows the last picture meanwhile."));
         });
-        ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(format!("Mini Remote {} · free and open source (MIT licence)", env!("CARGO_PKG_VERSION")))
-                    .size(12.0)
-                    .color(p.text_weak),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if primary_button(ui, "Done").clicked() {
-                    close = true;
-                }
+
+        section_card(ui, icon::KEYBOARD, "Keyboard", |ui| {
+            let meta = format!("{} key acts as", crate::platform::meta_key_label());
+            setting_row(ui, &meta, Some("Control makes copy, paste and undo work as on the Mac."), |ui| {
+                segmented(ui, &mut s.meta_key, &[(MetaMapping::Control, "Control"), (MetaMapping::Super, "Windows key")])
             });
+            row_divider(ui);
+            let alt = format!("{} key acts as", crate::platform::alt_key_label());
+            setting_row(ui, &alt, Some("Characters like @ and { still arrive as typed."), |ui| {
+                segmented(ui, &mut s.alt_key, &[(AltMapping::Alt, "Alt"), (AltMapping::AltGr, "AltGr")])
+            });
+            row_divider(ui);
+            setting_row(ui, "Keyboard mode", Some("For new connections. Characters works with any layout."), |ui| {
+                let options = [(KeyboardMode::Characters, "Characters"), (KeyboardMode::Physical, "Physical keys")];
+                segmented(ui, &mut s.keyboard_mode, &options)
+            });
+            row_divider(ui);
+            row_hint(ui, LAYOUT_HINT);
+            row_divider(ui);
+            row_hint(
+                ui,
+                &format!(
+                    "Mini Remote's own shortcuts: {} full screen, {} menu, {} disconnect.",
+                    crate::platform::shortcut_label("F"),
+                    crate::platform::shortcut_label("S"),
+                    crate::platform::shortcut_label("W"),
+                ),
+            );
+        });
+
+        section_card(ui, icon::CLIPBOARD_TEXT, "Clipboard", |ui| {
+            setting_row(ui, "Share clipboard with the Pi", Some("Copy on one computer, paste on the other."), |ui| {
+                toggle(ui, &mut s.share_clipboard)
+            });
+        });
+
+        section_card(ui, icon::IMAGE, "Picture", |ui| {
+            setting_row(ui, "Picture quality", Some("For new connections."), |ui| {
+                quality_combo(ui, "settings-quality", &mut s.default_quality)
+            });
+            row_divider(ui);
+            setting_row(ui, "Smoother video", Some("Use H.264 for new connections. Works best on Pi 4."), |ui| {
+                toggle(ui, &mut s.default_video)
+            });
+        });
+
+        section_card(ui, icon::PLUGS_CONNECTED, "Connection", |ui| {
+            setting_row(ui, "Reconnect automatically", Some("Keeps trying if the network drops."), |ui| {
+                toggle(ui, &mut s.auto_reconnect)
+            });
+            row_divider(ui);
+            setting_row(ui, "Allow unencrypted login", Some("For new connections. Only for older servers."), |ui| {
+                toggle(ui, &mut s.default_allow_unencrypted)
+            });
+            if s.default_allow_unencrypted {
+                ui.label(
+                    RichText::new("Others on your network could read the password and see the screen.")
+                        .size(12.0)
+                        .color(p.warning),
+                );
+                ui.add_space(12.0);
+            }
+        });
+
+        section_card(ui, icon::FOLDER_SIMPLE, "Files", |ui| {
+            let shown = download_folder.display().to_string();
+            setting_row(ui, "Save copied files in", Some(&shown), |ui| {
+                let r = secondary_button(ui, "Change…");
+                if r.clicked() {
+                    choose_folder = true;
+                }
+                r
+            });
+        });
+
+        section_card(ui, icon::INFO, "About", |ui| {
+            ui.add_space(12.0);
+            ui.spacing_mut().item_spacing.y = 2.0;
+            ui.label(RichText::new(format!("Mini Remote {}", env!("CARGO_PKG_VERSION"))).font(medium(14.0)));
+            ui.label(RichText::new("Free software under the MIT licence.").size(12.5).color(p.text_weak));
+            ui.label(RichText::new("Inter font, SIL Open Font License.").size(12.5).color(p.text_weak));
+            ui.add_space(12.0);
         });
     });
+
+    if choose_folder {
+        app.choose_download_folder();
+    }
     if app.settings != before {
         app.save_settings();
-    }
-    if close || modal.should_close() {
-        app.settings_open = false;
     }
 }

@@ -38,6 +38,16 @@ pub enum AltMapping {
     AltGr,
 }
 
+/// How much room the side menu takes while a remote screen is shown.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SidebarMode {
+    #[default]
+    Full,
+    /// Icons only.
+    Rail,
+    Hidden,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Appearance {
     #[default]
@@ -140,6 +150,8 @@ impl Connection {
         Connection {
             id: new_id(),
             quality: settings.default_quality,
+            video: settings.default_video,
+            allow_unencrypted: settings.default_allow_unencrypted,
             keyboard_mode: settings.keyboard_mode,
             share_clipboard: settings.share_clipboard,
             ..Connection::default()
@@ -207,7 +219,26 @@ pub struct Settings {
     pub share_clipboard: bool,
     /// Default for new connections.
     pub default_quality: Quality,
+    /// Default for new connections: prefer the H.264 video encoding.
+    pub default_video: bool,
+    /// Default for new connections: allow logins without encryption.
+    pub default_allow_unencrypted: bool,
     pub auto_reconnect: bool,
+    /// Where copied files go; `None` means the Downloads folder.
+    pub download_dir: Option<String>,
+    /// Side menu size while a remote screen is shown.
+    pub sidebar: SidebarMode,
+}
+
+impl Settings {
+    /// Folder for files copied from the remote computer.
+    pub fn download_folder(&self) -> std::path::PathBuf {
+        self.download_dir
+            .as_ref()
+            .filter(|d| !d.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(crate::platform::download_dir)
+    }
 }
 
 impl Default for Settings {
@@ -219,7 +250,11 @@ impl Default for Settings {
             keyboard_mode: KeyboardMode::Characters,
             share_clipboard: true,
             default_quality: Quality::Automatic,
+            default_video: false,
+            default_allow_unencrypted: false,
             auto_reconnect: true,
+            download_dir: None,
+            sidebar: SidebarMode::Full,
         }
     }
 }

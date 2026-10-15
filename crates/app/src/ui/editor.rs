@@ -1,16 +1,21 @@
-//! The connection editor dialog.
+//! The connection editor page ("New connection" and editing a saved one).
+//! Built only from the shared row helpers, so labels, inputs and controls
+//! line up in fixed columns.
 
-use egui::{Align, ComboBox, Id, Layout, RichText, Ui};
+use egui::{Align, ComboBox, Frame, Layout, Margin, Response, Ui};
 
-use super::theme::Palette;
-use super::toolbar::quality_options;
-use super::widgets::{
-    field_label, floating, hint_text, icon_button, primary_button, secondary_button, section_title, segmented,
-    text_field, toggle_row, warning_box,
-};
+use super::home::{PAGE_MARGIN, page};
 use super::icon;
+use super::settings::quality_combo;
+use super::theme::Palette;
+use super::widgets::{
+    form_extra, form_hint, form_row, icon_button, primary_button, row_divider, row_hint, section_card,
+    secondary_button, segmented, setting_row, text_field, toggle, warning_box,
+};
 use crate::app::{App, EditorState};
 use crate::model::{KeyboardMode, Scaling, SshLogin};
+
+const EDITOR_WIDTH: f32 = 640.0;
 
 enum Action {
     Cancel,
@@ -18,56 +23,58 @@ enum Action {
     SaveAndConnect,
 }
 
-pub fn show(app: &mut App, ctx: &egui::Context) {
+pub fn page_ui(app: &mut App, ui: &mut Ui) {
     let store_name = crate::platform::secret_store_name();
     let store_available = app.secrets.available();
-    let Some(editor) = &mut app.editor else { return };
-    let p = Palette::of(ctx);
+    let p = Palette::of(ui.ctx());
+    let Some(editor) = &mut app.editor else {
+        app.show_page(crate::app::Page::Saved);
+        return;
+    };
     let mut action = None;
-    let max_height = (ctx.content_rect().height() - 230.0).max(240.0);
 
-    let modal = egui::Modal::new(Id::new("connection-editor")).frame(floating(&p)).show(ctx, |ui| {
-        ui.set_width(500.0);
-        let title = if editor.is_new { "Add connection" } else { "Edit connection" };
-        ui.label(RichText::new(title).heading().strong());
-        ui.add_space(8.0);
+    // Buttons stay visible at the bottom while the form scrolls, lined up
+    // with the right edge of the form.
+    egui::Panel::bottom("editor-buttons")
+        .frame(Frame::new().fill(p.bg).inner_margin(Margin::symmetric(0, 12)))
+        .show(ui, |ui| {
+            let width = (ui.available_width() - 2.0 * PAGE_MARGIN).clamp(240.0, EDITOR_WIDTH);
+            ui.horizontal(|ui| {
+                ui.add_space(PAGE_MARGIN);
+                ui.allocate_ui_with_layout(egui::vec2(width, 32.0), Layout::right_to_left(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    if primary_button(ui, "Save and connect").clicked() {
+                        action = Some(Action::SaveAndConnect);
+                    }
+                    if secondary_button(ui, "Save").clicked() {
+                        action = Some(Action::Save);
+                    }
+                    if secondary_button(ui, "Cancel").clicked() {
+                        action = Some(Action::Cancel);
+                    }
+                    if let Some(err) = &editor.error {
+                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| super::widgets::error_line(ui, err));
+                    }
+                });
+            });
+        });
 
-        egui::ScrollArea::vertical().max_height(max_height).auto_shrink([false, true]).show(ui, |ui| {
-            ui.set_width(ui.available_width() - 12.0);
+    egui::CentralPanel::no_frame().show(ui, |ui| {
+        page(ui, "editor-page", EDITOR_WIDTH, |ui, _| {
+            ui.add_space(-24.0);
             general(ui, editor, store_name, store_available);
             picture(ui, editor);
             control(ui, editor);
             security(ui, editor);
-            ssh_section(ui, editor, &p, store_name);
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(icon::FOLDER_SIMPLE).color(p.text_weak));
-                hint_text(ui, "Copy files to and from the Pi with the Files button in the toolbar. It uses the secure remote login above.");
-            });
-        });
-
-        if let Some(err) = &editor.error {
-            ui.add_space(6.0);
-            ui.label(RichText::new(format!("{}  {err}", icon::WARNING_CIRCLE)).color(p.danger));
-        }
-        ui.add_space(12.0);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if primary_button(ui, "Save and connect").clicked() {
-                action = Some(Action::SaveAndConnect);
-            }
-            if secondary_button(ui, "Save").clicked() {
-                action = Some(Action::Save);
-            }
-            if secondary_button(ui, "Cancel").clicked() {
-                action = Some(Action::Cancel);
-            }
+            ssh_section(ui, editor, store_name);
         });
     });
-    if modal.should_close() && action.is_none() {
+
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) && action.is_none() {
         action = Some(Action::Cancel);
     }
     match action {
-        Some(Action::Cancel) => app.editor = None,
+        Some(Action::Cancel) => app.cancel_editor(),
         Some(Action::Save) => app.save_editor(false),
         Some(Action::SaveAndConnect) => app.save_editor(true),
         None => {}
@@ -75,225 +82,209 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 }
 
 fn general(ui: &mut Ui, e: &mut EditorState, store_name: &str, store_available: bool) {
-    field_label(ui, "Name");
-    ui.add(text_field(&mut e.conn.name, "For example: Living room Pi"));
-    ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.set_width(ui.available_width() - 100.0);
-            field_label(ui, "Address");
-            ui.add(text_field(&mut e.conn.host, "raspberrypi.local or 192.168.1.20"));
+    section_card(ui, icon::MONITOR, "Computer", |ui| {
+        form_row(ui, "Name", |ui, w| ui.add(text_field(&mut e.conn.name, "For example: Living room Pi").desired_width(w)));
+        row_divider(ui);
+        form_row(ui, "Address", |ui, w| {
+            ui.add(text_field(&mut e.conn.host, "raspberrypi.local or 192.168.1.20").desired_width(w))
         });
-        ui.vertical(|ui| {
-            field_label(ui, "Port");
-            ui.add(text_field(&mut e.port_text, "5900").desired_width(88.0));
-        });
+        row_divider(ui);
+        form_row(ui, "Port", |ui, w| ui.add(text_field(&mut e.port_text, "5900").desired_width(w)));
     });
 
-    section_title(ui, "Login");
-    field_label(ui, "Username");
-    ui.add(text_field(&mut e.conn.username, "pi"));
-    hint_text(ui, "The Pi's username. Leave it empty if the Pi only asks for a password.");
-    ui.add_space(4.0);
-    field_label(ui, "Screen sharing password");
-    let hint = if e.has_saved_password && !e.password_changed {
-        format!("Saved in {store_name} – type to change")
-    } else {
-        String::new()
-    };
-    ui.horizontal(|ui| {
-        let width = ui.available_width() - 40.0;
-        let r = ui.add(text_field(&mut e.password, &hint).password(!e.show_password).desired_width(width));
-        if r.changed() {
-            e.password_changed = true;
-        }
-        let eye = if e.show_password { icon::EYE_SLASH } else { icon::EYE };
-        if icon_button(ui, eye, if e.show_password { "Hide password" } else { "Show password" }).clicked() {
-            e.show_password = !e.show_password;
+    section_card(ui, icon::LOCK_SIMPLE, "Login", |ui| {
+        form_row(ui, "Username", |ui, w| ui.add(text_field(&mut e.conn.username, "pi").desired_width(w)));
+        form_hint(ui, "Leave it empty if the Pi only asks for a password.");
+        row_divider(ui);
+        form_row(ui, "Password", |ui, w| {
+            let hint = if e.has_saved_password && !e.password_changed {
+                format!("Saved in {store_name} – type to change")
+            } else {
+                String::new()
+            };
+            password_field(ui, w, &mut e.password, &mut e.password_changed, &mut e.show_password, &hint)
+        });
+        if store_available {
+            ui.add_space(-6.0);
+            form_extra(ui, |ui| ui.checkbox(&mut e.conn.remember_password, format!("Remember password in {store_name}")));
         }
     });
-    if store_available {
-        ui.checkbox(&mut e.conn.remember_password, format!("Remember password in {store_name}"));
+}
+
+/// A password input of width `w`, with a show/hide button after it.
+fn password_field(ui: &mut Ui, w: f32, text: &mut String, changed: &mut bool, show: &mut bool, hint: &str) -> Response {
+    let response = ui.add(text_field(text, hint).password(!*show).desired_width(w));
+    if response.changed() {
+        *changed = true;
     }
+    let eye = if *show { icon::EYE_SLASH } else { icon::EYE };
+    if icon_button(ui, eye, if *show { "Hide password" } else { "Show password" }).clicked() {
+        *show = !*show;
+    }
+    response
 }
 
 fn picture(ui: &mut Ui, e: &mut EditorState) {
-    section_title(ui, "Picture");
-    ui.horizontal(|ui| {
-        ui.label("Picture quality");
-        let current = quality_options().iter().find(|(q, _)| *q == e.conn.quality).map(|(_, l)| *l).unwrap_or("");
-        ComboBox::from_id_salt("editor-quality").selected_text(current).width(260.0).show_ui(ui, |ui| {
-            for (q, label) in quality_options() {
-                ui.selectable_value(&mut e.conn.quality, q, label);
-            }
+    section_card(ui, icon::IMAGE, "Picture", |ui| {
+        setting_row(ui, "Picture quality", Some("Automatic adapts to your network."), |ui| {
+            quality_combo(ui, "editor-quality", &mut e.conn.quality)
         });
+        row_divider(ui);
+        setting_row(ui, "Smoother video (H.264)", Some("Works best on Pi 4."), |ui| toggle(ui, &mut e.conn.video));
+        row_divider(ui);
+        setting_row(ui, "Size", None, |ui| {
+            segmented(ui, &mut e.conn.scaling, &[(Scaling::Fit, "Fit to window"), (Scaling::Actual, "Actual size")])
+        });
+        row_divider(ui);
+        setting_row(
+            ui,
+            "Resize the Pi's screen to fit the window",
+            Some("Only works when no monitor is plugged into the Pi."),
+            |ui| toggle(ui, &mut e.conn.resize_remote),
+        );
     });
-    ui.add_space(2.0);
-    toggle_row(ui, &mut e.conn.video, "Smoother video (H.264)", Some("Works best on Pi 4. Good for videos and moving pictures."));
-    ui.add_space(2.0);
-    ui.horizontal(|ui| {
-        ui.label("Size");
-        segmented(ui, &mut e.conn.scaling, &[(Scaling::Fit, "Fit to window"), (Scaling::Actual, "Actual size")]);
-    });
-    ui.add_space(2.0);
-    toggle_row(
-        ui,
-        &mut e.conn.resize_remote,
-        "Resize the Pi's screen to fit the window",
-        Some("Only works when no monitor is plugged into the Pi."),
-    );
 }
 
 fn control(ui: &mut Ui, e: &mut EditorState) {
-    section_title(ui, "Control");
-    toggle_row(ui, &mut e.conn.view_only, "View only", Some("Watch the Pi's screen without controlling its mouse and keyboard."));
-    toggle_row(ui, &mut e.conn.share_clipboard, "Share clipboard", Some("Text you copy on one computer can be pasted on the other."));
-    ui.add_space(2.0);
-    ui.horizontal(|ui| {
-        ui.label("Keyboard");
-        segmented(
-            ui,
-            &mut e.conn.keyboard_mode,
-            &[(KeyboardMode::Characters, "Characters"), (KeyboardMode::Physical, "Physical keys")],
-        );
+    section_card(ui, icon::MOUSE, "Control", |ui| {
+        setting_row(ui, "View only", Some("Watch without controlling mouse and keyboard."), |ui| {
+            toggle(ui, &mut e.conn.view_only)
+        });
+        row_divider(ui);
+        setting_row(ui, "Share clipboard", Some("Copy on one computer, paste on the other."), |ui| {
+            toggle(ui, &mut e.conn.share_clipboard)
+        });
+        row_divider(ui);
+        let hint = match e.conn.keyboard_mode {
+            KeyboardMode::Characters => "Sends the letters you type (recommended).",
+            KeyboardMode::Physical => "Sends key positions; the Pi's layout decides.",
+        };
+        setting_row(ui, "Keyboard", Some(hint), |ui| {
+            let options = [(KeyboardMode::Characters, "Characters"), (KeyboardMode::Physical, "Physical keys")];
+            segmented(ui, &mut e.conn.keyboard_mode, &options)
+        });
     });
-    hint_text(
-        ui,
-        match e.conn.keyboard_mode {
-            KeyboardMode::Characters => "Sends the letters you type. Works with any keyboard layout (recommended).",
-            KeyboardMode::Physical => "Sends which keys you press; the Pi's own keyboard layout decides the letters. Good for games.",
-        },
-    );
 }
 
 fn security(ui: &mut Ui, e: &mut EditorState) {
-    section_title(ui, "Security");
-    toggle_row(
-        ui,
-        &mut e.conn.allow_unencrypted,
-        "Allow unencrypted login",
-        Some("Only needed for older screen sharing servers."),
-    );
-    if e.conn.allow_unencrypted && !e.conn.ssh.enabled {
-        warning_box(
-            ui,
-            "Without encryption, others on your network could read your password and see your screen. Only use this at home, or together with secure remote login (SSH) below.",
-        );
-    }
+    section_card(ui, icon::SHIELD_CHECK, "Security", |ui| {
+        setting_row(ui, "Allow unencrypted login", Some("Only needed for older screen sharing servers."), |ui| {
+            toggle(ui, &mut e.conn.allow_unencrypted)
+        });
+        if e.conn.allow_unencrypted && !e.conn.ssh.enabled {
+            warning_box(
+                ui,
+                "Without encryption, others on your network could read your password and see your screen. Use it only at home, or with SSH below.",
+            );
+            ui.add_space(12.0);
+        }
+    });
 }
 
-fn ssh_section(ui: &mut Ui, e: &mut EditorState, p: &Palette, store_name: &str) {
-    ui.add_space(6.0);
-    egui::CollapsingHeader::new(RichText::new("Secure remote login (SSH)").strong().size(13.0).color(p.text_weak))
-        .id_salt("editor-ssh")
-        .default_open(e.conn.ssh.enabled)
-        .show(ui, |ui| {
-            toggle_row(
-                ui,
-                &mut e.conn.ssh.enabled,
-                "Connect through SSH (for use away from home)",
-                Some("Everything goes through the Pi's encrypted remote login. Turn on SSH in Raspberry Pi Configuration > Interfaces."),
-            );
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_width(ui.available_width() - 100.0);
-                    field_label(ui, "SSH address");
-                    let same = if e.conn.host.trim().is_empty() { "Same as above".to_string() } else { e.conn.host.trim().to_string() };
-                    ui.add(text_field(&mut e.conn.ssh.host, &same));
-                });
-                ui.vertical(|ui| {
-                    field_label(ui, "Port");
-                    ui.add(text_field(&mut e.ssh_port_text, "22").desired_width(88.0));
-                });
-            });
-            field_label(ui, "SSH username");
-            let same_user = if e.conn.username.trim().is_empty() { "pi".to_string() } else { e.conn.username.trim().to_string() };
-            ui.add(text_field(&mut e.conn.ssh.username, &same_user));
-            ui.add_space(4.0);
+fn ssh_section(ui: &mut Ui, e: &mut EditorState, store_name: &str) {
+    section_card(ui, icon::KEY, "Secure remote login (SSH)", |ui| {
+        setting_row(
+            ui,
+            "Connect through SSH",
+            Some("For use away from home. Turn on SSH in Raspberry Pi Configuration > Interfaces."),
+            |ui| toggle(ui, &mut e.conn.ssh.enabled),
+        );
+        row_divider(ui);
+        row_hint(ui, "These details are also used for copying files.");
+        row_divider(ui);
+        form_row(ui, "SSH address", |ui, w| {
+            let host = e.conn.host.trim();
+            let same = if host.is_empty() { "Same as above".to_string() } else { host.to_string() };
+            ui.add(text_field(&mut e.conn.ssh.host, &same).desired_width(w))
+        });
+        row_divider(ui);
+        form_row(ui, "SSH port", |ui, w| ui.add(text_field(&mut e.ssh_port_text, "22").desired_width(w)));
+        row_divider(ui);
+        form_row(ui, "SSH username", |ui, w| {
+            let user = e.conn.username.trim();
+            let same = if user.is_empty() { "pi".to_string() } else { user.to_string() };
+            ui.add(text_field(&mut e.conn.ssh.username, &same).desired_width(w))
+        });
+        row_divider(ui);
 
-            let kind = login_kind(&e.conn.ssh.login);
-            let labels = ["Same password as the screen login", "A separate password", "A key file", "The SSH agent"];
-            let mut new_kind = kind;
-            ui.horizontal(|ui| {
-                ui.label("Log in with");
-                ComboBox::from_id_salt("editor-ssh-login").selected_text(labels[kind]).width(260.0).show_ui(ui, |ui| {
+        let kind = login_kind(&e.conn.ssh.login);
+        let labels = ["Same password as above", "A separate password", "A key file", "The SSH agent"];
+        let mut new_kind = kind;
+        form_row(ui, "Log in with", |ui, w| {
+            ComboBox::from_id_salt("editor-ssh-login")
+                .selected_text(labels[kind])
+                .width(w)
+                .show_ui(ui, |ui| {
                     for (i, label) in labels.iter().enumerate() {
                         ui.selectable_value(&mut new_kind, i, *label);
                     }
-                });
-            });
-            if new_kind != kind {
-                e.conn.ssh.login = match new_kind {
-                    0 => SshLogin::SamePassword,
-                    1 => SshLogin::Password,
-                    2 => SshLogin::KeyFile(
-                        ssh::default_key_files().first().map(|p| p.display().to_string()).unwrap_or_default(),
-                    ),
-                    _ => SshLogin::Agent,
-                };
-            }
-
-            match &mut e.conn.ssh.login {
-                SshLogin::SamePassword => {
-                    hint_text(ui, "Uses the username and password above.");
-                }
-                SshLogin::Agent => {
-                    hint_text(ui, "Uses the keys loaded in your SSH agent.");
-                }
-                SshLogin::Password => {
-                    field_label(ui, "SSH password");
-                    ssh_secret_field(ui, e_ssh(&mut e.ssh_password, &mut e.ssh_password_changed, e.has_saved_ssh_password, &mut e.show_ssh_password), store_name);
-                }
-                SshLogin::KeyFile(path) => {
-                    field_label(ui, "Key file");
-                    ui.horizontal(|ui| {
-                        let width = ui.available_width() - 40.0;
-                        ui.add(text_field(path, "~/.ssh/id_ed25519").desired_width(width));
-                        let keys = ssh::default_key_files();
-                        ui.add_enabled_ui(!keys.is_empty(), |ui| {
-                            ui.menu_button(icon::KEY, |ui| {
-                                for key in keys {
-                                    let shown = key.display().to_string();
-                                    if ui.button(&shown).clicked() {
-                                        *path = shown;
-                                    }
-                                }
-                            })
-                            .response
-                            .on_hover_text("Pick one of your keys");
-                        });
-                    });
-                    field_label(ui, "Key passphrase");
-                    ssh_secret_field(ui, e_ssh(&mut e.ssh_password, &mut e.ssh_password_changed, e.has_saved_ssh_password, &mut e.show_ssh_password), store_name);
-                    hint_text(ui, "Leave empty if the key has no passphrase.");
-                }
-            }
+                })
+                .response
         });
-}
-
-/// The SSH password fields of the editor, borrowed together.
-struct SshSecret<'a> {
-    text: &'a mut String,
-    changed: &'a mut bool,
-    saved: bool,
-    show: &'a mut bool,
-}
-
-fn e_ssh<'a>(text: &'a mut String, changed: &'a mut bool, saved: bool, show: &'a mut bool) -> SshSecret<'a> {
-    SshSecret { text, changed, saved, show }
-}
-
-fn ssh_secret_field(ui: &mut Ui, s: SshSecret, store_name: &str) {
-    let hint = if s.saved && !*s.changed { format!("Saved in {store_name} – type to change") } else { String::new() };
-    ui.horizontal(|ui| {
-        let width = ui.available_width() - 40.0;
-        if ui.add(text_field(s.text, &hint).password(!*s.show).desired_width(width)).changed() {
-            *s.changed = true;
+        if new_kind != kind {
+            e.conn.ssh.login = match new_kind {
+                0 => SshLogin::SamePassword,
+                1 => SshLogin::Password,
+                2 => SshLogin::KeyFile(
+                    ssh::default_key_files().first().map(|p| p.display().to_string()).unwrap_or_default(),
+                ),
+                _ => SshLogin::Agent,
+            };
         }
-        let eye = if *s.show { icon::EYE_SLASH } else { icon::EYE };
-        if icon_button(ui, eye, if *s.show { "Hide" } else { "Show" }).clicked() {
-            *s.show = !*s.show;
+
+        let saved_hint = if e.has_saved_ssh_password && !e.ssh_password_changed {
+            format!("Saved in {store_name} – type to change")
+        } else {
+            String::new()
+        };
+        match &mut e.conn.ssh.login {
+            SshLogin::SamePassword => form_hint(ui, "Uses the username and password from Login above."),
+            SshLogin::Agent => form_hint(ui, "Uses the keys loaded in your SSH agent."),
+            SshLogin::Password => {
+                row_divider(ui);
+                form_row(ui, "SSH password", |ui, w| {
+                    password_field(
+                        ui,
+                        w,
+                        &mut e.ssh_password,
+                        &mut e.ssh_password_changed,
+                        &mut e.show_ssh_password,
+                        &saved_hint,
+                    )
+                });
+            }
+            SshLogin::KeyFile(path) => {
+                row_divider(ui);
+                form_row(ui, "Key file", |ui, w| {
+                    let response = ui.add(text_field(path, "~/.ssh/id_ed25519").desired_width(w));
+                    let keys = ssh::default_key_files();
+                    ui.add_enabled_ui(!keys.is_empty(), |ui| {
+                        ui.menu_button(super::theme::ic(icon::CARET_DOWN), |ui| {
+                            for key in keys {
+                                let shown = key.display().to_string();
+                                if ui.button(&shown).clicked() {
+                                    *path = shown;
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text("Pick one of your keys");
+                    });
+                    response
+                });
+                row_divider(ui);
+                form_row(ui, "Key passphrase", |ui, w| {
+                    password_field(
+                        ui,
+                        w,
+                        &mut e.ssh_password,
+                        &mut e.ssh_password_changed,
+                        &mut e.show_ssh_password,
+                        &saved_hint,
+                    )
+                });
+                form_hint(ui, "Leave it empty if the key has no passphrase.");
+            }
         }
     });
 }
