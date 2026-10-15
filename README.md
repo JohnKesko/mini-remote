@@ -46,7 +46,9 @@ There is no ready-made download yet, so you build the app yourself. It takes a f
    scripts/macos/bundle.sh
    ```
 
-4. Copy `target/release/Mini Remote.app` to your **Applications** folder.
+4. The app is now in the `dist` folder: `dist/Mini Remote.app`. Open it from there, or copy it to your **Applications** folder.
+
+To update, run the same command again. It replaces `dist/Mini Remote.app` with the new version, and if the app is open, it closes and reopens it. Your saved connections, settings and passwords are kept.
 
 The first time you open it, your Mac asks if Mini Remote may find devices on your local network. Click **Allow**. Mini Remote needs this to reach your Pi.
 
