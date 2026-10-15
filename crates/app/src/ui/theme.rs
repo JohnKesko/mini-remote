@@ -178,6 +178,8 @@ pub fn install(ctx: &egui::Context) {
             s.icon_width = 16.0;
             s.icon_width_inner = 9.0;
             style.interaction.tooltip_delay = 0.4;
+            // egui only has these debug outlines in debug builds.
+            #[cfg(debug_assertions)]
             if super::widgets::debug_layout() {
                 // Outline every widget and flag anything not on whole pixels.
                 style.debug.show_interactive_widgets = true;
