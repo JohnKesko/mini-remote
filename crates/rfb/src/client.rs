@@ -354,12 +354,15 @@ impl Control {
                 if self.last_remote_clipboard.as_deref() == Some(text.as_str())
                     || self.local_clipboard.as_deref() == Some(text.as_str())
                 {
+                    log::debug!("clipboard: same text as before, not sent again");
                     return;
                 }
                 if self.ext_clipboard {
+                    log::debug!("clipboard: telling the server we have new text ({} bytes)", text.len());
                     self.local_clipboard = Some(text);
                     self.send(msg::clipboard_notify_text());
                 } else {
+                    log::debug!("clipboard: sending text the classic way ({} bytes)", text.len());
                     self.send(msg::client_cut_text_latin1(&text));
                     self.local_clipboard = Some(text);
                 }
@@ -421,11 +424,16 @@ impl Control {
                 }
             }
             Internal::ClipboardCaps => {
+                log::debug!("clipboard: server supports the extended clipboard");
                 self.ext_clipboard = true;
                 self.send(msg::clipboard_caps());
             }
-            Internal::ClipboardNotify => self.send(msg::clipboard_request_text()),
+            Internal::ClipboardNotify => {
+                log::debug!("clipboard: server has new text, asking for it");
+                self.send(msg::clipboard_request_text());
+            }
             Internal::ClipboardRequest => {
+                log::debug!("clipboard: server asks for our text (have text: {})", self.local_clipboard.is_some());
                 if let Some(t) = &self.local_clipboard {
                     self.send(msg::clipboard_provide_text(t));
                 }
@@ -436,6 +444,7 @@ impl Control {
                 }
             }
             Internal::RemoteClipboard(text) => {
+                log::debug!("clipboard: received {} bytes from the server", text.len());
                 // Some servers announce one copy twice in a row.
                 if self.last_remote_clipboard.as_deref() == Some(text.as_str())
                     && self.remote_clipboard_at.is_some_and(|t| t.elapsed() < Duration::from_secs(1))

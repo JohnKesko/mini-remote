@@ -78,6 +78,7 @@ Move the mouse to the top of the Pi's screen to show the toolbar. From there you
 ### Keyboard
 
 - The **Command** key works like **Ctrl** on the Pi, so Cmd+C and Cmd+V copy and paste as you are used to.
+- In the Pi's **Terminal**, paste with **Command + Shift + V** (terminals on the Pi paste with Ctrl+Shift+V).
 - **Control + Command + F**: full screen on or off. **Esc** also leaves full screen (you can turn that off in Settings if you need Esc on the Pi).
 - **Control + Command + S**: show or hide the sidebar.
 - **Control + Command + W**: disconnect.
@@ -130,6 +131,9 @@ The Pi's screen sharing uses its own keyboard layout. On the Pi, add a line with
 
 **"This looks like RealVNC Server"**
 Older Raspberry Pi OS uses RealVNC's screen sharing, which has its own private login. In RealVNC Server's options, set **Authentication** to **VNC password**. Then, in Mini Remote, turn on **Allow unencrypted login** for that Pi. Or update the Pi to a newer Raspberry Pi OS.
+
+**Pasting doesn't work in the Pi's Terminal**
+Terminals paste with Ctrl+Shift+V, so use **Command + Shift + V**. Elsewhere, Command + V works. You can also use **Type clipboard text** in the toolbar's clipboard menu.
 
 **The Pi's screen won't resize to fit my window**
 This only works when no monitor is plugged into the Pi.

@@ -8,6 +8,7 @@
 //!   --video                       prefer H.264 video
 //!   --type TEXT                   type TEXT (then Enter) after connecting
 //!   --paste                       press Ctrl+V after typing
+//!   --paste-terminal              press Ctrl+Shift+V after typing (how a terminal pastes)
 //!   --copy-all                    press Ctrl+A, Ctrl+C after typing (remote clipboard -> event)
 //!   --click X,Y                   where to click before typing (default 960,540)
 //!   --clipboard TEXT              send TEXT to the remote clipboard
@@ -100,6 +101,13 @@ fn main() {
                 }
                 if flag("--paste") {
                     combo(&session, 0x76);
+                }
+                if flag("--paste-terminal") {
+                    // Same keys Mini Remote sends for Command+Shift+V.
+                    let v = std::env::var("PROBE_V_KEYSYM").ok().and_then(|h| u32::from_str_radix(&h, 16).ok()).unwrap_or(0x76);
+                    for (down, keysym) in [(true, 0xffe3), (true, 0xffe1), (true, v), (false, v), (false, 0xffe1), (false, 0xffe3)] {
+                        session.send(Command::Key { down, keysym, scancode: 0 });
+                    }
                 }
                 if flag("--copy-all") {
                     combo(&session, 0x61);

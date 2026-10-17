@@ -142,6 +142,11 @@ pub fn show(app: &mut App, ui: &mut Ui, index: usize, area: Rect) {
                             if ui.checkbox(&mut share, "Share clipboard automatically").changed() {
                                 action = Some(Action::ShareClipboard(share));
                             }
+                            ui.label(
+                                RichText::new("Tip: in the Pi's Terminal, paste with Command-Shift-V.")
+                                    .small()
+                                    .color(p.text_weak),
+                            );
                         });
                     });
                     ui.add_enabled_ui(connected, |ui| {

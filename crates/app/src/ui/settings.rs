@@ -75,7 +75,7 @@ pub fn page_ui(app: &mut App, ui: &mut Ui) {
             row_hint(
                 ui,
                 &format!(
-                    "Mini Remote's own shortcuts: {} full screen (Esc also leaves it), {} menu, {} disconnect.",
+                    "Mini Remote's own shortcuts: {} full screen (Esc also leaves it), {} menu, {} disconnect. In the Pi's Terminal, paste with Command-Shift-V.",
                     crate::platform::shortcut_label("F"),
                     crate::platform::shortcut_label("S"),
                     crate::platform::shortcut_label("W"),

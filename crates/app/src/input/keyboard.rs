@@ -156,6 +156,11 @@ impl Keyboard {
     }
 
     /// Translate one local key event into messages for the remote computer.
+    /// Whether a Shift key is held down on the remote side.
+    fn shift_held(&self) -> bool {
+        self.held.values().any(|(sym, _)| *sym == xk::SHIFT_L || *sym == xk::SHIFT_R)
+    }
+
     pub fn key(&mut self, input: &KeyInput, cfg: &KeyConfig) -> Vec<KeyMsg> {
         let mut out = Vec::new();
         let code = match input.physical {
@@ -237,9 +242,15 @@ impl Keyboard {
             // Option typed a character (like @ or {): send only that character.
             plain_keysym(input)
         } else if option_held || shortcut {
-            // A shortcut such as Ctrl+C or Alt+Tab: send the plain key.
+            // A shortcut such as Ctrl+C or Alt+Tab: send the plain key. With
+            // Shift also held, send the capital letter: the server only keeps
+            // Shift when the symbol needs it, so Ctrl+Shift+V (paste in a
+            // terminal) would otherwise arrive as Ctrl+V.
             self.flush_option(cfg, &mut out);
-            base_keysym(input).or_else(|| plain_keysym(input))
+            let shift = self.shift_held();
+            base_keysym(input)
+                .or_else(|| plain_keysym(input))
+                .map(|sym| if shift { capital_letter(sym) } else { sym })
         } else {
             plain_keysym(input)
         };
@@ -367,6 +378,15 @@ fn plain_keysym(input: &KeyInput) -> Option<u32> {
 }
 
 /// Keysym for the key without modifiers (used for shortcuts like Ctrl+C).
+/// The capital form of a lowercase letter keysym; other keysyms unchanged.
+fn capital_letter(keysym: u32) -> u32 {
+    match keysym {
+        0x61..=0x7a => keysym - 0x20,
+        0xe0..=0xfe if keysym != 0xf7 => keysym - 0x20,
+        _ => keysym,
+    }
+}
+
 fn base_keysym(input: &KeyInput) -> Option<u32> {
     key_keysym(&input.base, input.location).or_else(|| key_keysym(&input.logical, input.location))
 }
@@ -467,6 +487,38 @@ mod tests {
         kb.key(&key(KeyCode::KeyC, ch("c"), ch("c"), false), &c);
         let m = kb.key(&modifier(KeyCode::SuperLeft, NamedKey::Super, false), &c);
         assert_eq!(m, vec![KeyMsg::up(xk::CONTROL_L, sc::CONTROL_L)]);
+    }
+
+    #[test]
+    fn command_shift_v_becomes_control_shift_v_for_terminals() {
+        // The Pi's Terminal pastes with Control+Shift+V, so Command+Shift+V must send that.
+        let mut kb = Keyboard::new();
+        let c = cfg();
+        let mut sent = Vec::new();
+        sent.extend(kb.key(&modifier(KeyCode::SuperLeft, NamedKey::Super, true), &c));
+        sent.extend(kb.key(&modifier(KeyCode::ShiftLeft, NamedKey::Shift, true), &c));
+        // macOS reports "V" with Shift held, and "v" without modifiers.
+        sent.extend(kb.key(&key(KeyCode::KeyV, ch("V"), ch("v"), true), &c));
+        assert_eq!(
+            sent,
+            vec![
+                KeyMsg::down(xk::CONTROL_L, sc::CONTROL_L),
+                KeyMsg::down(xk::SHIFT_L, sc::SHIFT_L),
+                KeyMsg::down('V' as u32, 0x2f),
+            ]
+        );
+        // The release matches the press.
+        let up = kb.key(&key(KeyCode::KeyV, ch("V"), ch("v"), false), &c);
+        assert_eq!(up, vec![KeyMsg::up('V' as u32, 0x2f)]);
+    }
+
+    #[test]
+    fn capital_letters_only_change_lowercase_letters() {
+        assert_eq!(capital_letter('v' as u32), 'V' as u32);
+        assert_eq!(capital_letter(0xe5), 0xc5); // å -> Å
+        assert_eq!(capital_letter(0xf7), 0xf7); // division sign stays
+        assert_eq!(capital_letter('1' as u32), '1' as u32);
+        assert_eq!(capital_letter(xk::RETURN), xk::RETURN);
     }
 
     #[test]
