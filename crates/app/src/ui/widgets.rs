@@ -115,6 +115,25 @@ pub fn secondary_button(ui: &mut Ui, text: &str) -> Response {
     sized(ui, button, CONTROL_HEIGHT)
 }
 
+/// The main action in the header, with an icon in front (e.g. "New connection").
+pub fn primary_header_button(ui: &mut Ui, icon: &str, text: &str, height: f32) -> Response {
+    let p = Palette::of(ui.ctx());
+    let atoms = (ic(icon).size(14.0).color(p.on_accent), RichText::new(text).font(medium(13.5)).color(p.on_accent));
+    let button = egui::Button::new(atoms)
+        .fill(p.accent)
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(RADIUS_SMALL));
+    let response = ui
+        .scope(|ui| {
+            // A little more room left and right than a plain button.
+            ui.spacing_mut().button_padding.x = 12.0;
+            ui.spacing_mut().item_spacing.x = 6.0;
+            sized(ui, button, height)
+        })
+        .inner;
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 /// A quieter button with an icon in front.
 pub fn secondary_icon_button(ui: &mut Ui, icon: &str, text: &str, height: f32) -> Response {
     let atoms = (ic(icon).size(14.0), RichText::new(text).font(medium(13.5)));
@@ -302,8 +321,27 @@ pub fn truncated(ui: &Ui, text: &str, font: egui::FontId, color: Color32, max_wi
 }
 
 /// Paint a galley with its left edge at `x`, centred on `center_y`, on whole pixels.
+/// Inter's capital letters are this tall, as a fraction of the font size.
+const CAP_HEIGHT: f32 = 0.727;
+
+/// Where to put a galley's top so its capital letters are centred on
+/// `center_y` (the way text is centred optically), falling back to centring
+/// the whole line box.
+fn optical_top(galley: &Galley, center_y: f32) -> f32 {
+    let size = galley.job.sections.first().map(|s| s.format.font_id.size);
+    let baseline = galley.rows.first().and_then(|r| r.row.glyphs.first().map(|g| r.pos.y + g.pos.y));
+    match (size, baseline) {
+        (Some(size), Some(baseline)) => {
+            // The font tweak moves the drawn letters by TEXT_LIFT * size.
+            let drawn_baseline = baseline + super::theme::TEXT_LIFT * size;
+            center_y + CAP_HEIGHT * size / 2.0 - drawn_baseline
+        }
+        _ => center_y - galley.size().y / 2.0,
+    }
+}
+
 pub fn paint_left_center(ui: &Ui, galley: std::sync::Arc<Galley>, x: f32, center_y: f32, color: Color32) -> Rect {
-    let pos = snap(ui, pos2(x, center_y - galley.size().y / 2.0));
+    let pos = snap(ui, pos2(x, optical_top(&galley, center_y)));
     let rect = Rect::from_min_size(pos, galley.size());
     ui.painter().galley(pos, galley, color);
     rect
@@ -370,7 +408,14 @@ pub fn section_card<R>(ui: &mut Ui, symbol: &str, title: &str, add: impl FnOnce(
 pub fn setting_row(ui: &mut Ui, label: &str, description: Option<&str>, control: impl FnOnce(&mut Ui) -> Response) {
     let p = Palette::of(ui.ctx());
     let width = ui.available_width();
-    let left_width = (width * 0.55).max(160.0);
+    // The text wraps before the controls. Their width is known from the last
+    // frame (wide controls, like four choices, would otherwise cover the text).
+    let width_id = ui.id().with(("setting-row-control", label));
+    let control_width: Option<f32> = ui.ctx().data(|d| d.get_temp(width_id));
+    let left_width = match control_width {
+        Some(w) => (width - w - 2.0 * GAP).clamp(120.0, width),
+        None => (width * 0.55).max(160.0),
+    };
     let title = ui.painter().layout_no_wrap(label.to_string(), medium(14.0), p.text);
     let desc = description.map(|d| {
         ui.painter().layout(d.to_string(), egui::FontId::proportional(12.0), p.text_weak, left_width)
@@ -388,8 +433,11 @@ pub fn setting_row(ui: &mut Ui, label: &str, description: Option<&str>, control:
         ui.painter().galley(pos2(rect.left(), top + title_h + 2.0), desc, p.text_weak);
     }
 
-    let right = Rect::from_min_max(pos2(rect.left() + left_width, rect.top()), rect.max);
-    let response = in_rect(ui, right, Layout::right_to_left(Align::Center), control);
+    let response = in_rect(ui, rect, Layout::right_to_left(Align::Center), control);
+    if control_width != Some(response.rect.width()) {
+        ui.ctx().data_mut(|d| d.insert_temp(width_id, response.rect.width()));
+        ui.ctx().request_repaint();
+    }
     check_centres("settings row", center, &[response.rect]);
 }
 

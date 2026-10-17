@@ -122,6 +122,8 @@ pub struct Negotiated {
     pub security: String,
     pub encrypted: bool,
     pub version: String,
+    /// The version the server announced, before we picked ours.
+    pub server_version: String,
     pub init: ServerInit,
 }
 
@@ -134,6 +136,7 @@ pub async fn negotiate(mut stream: BoxedStream, ui: &mut Prompter<'_>) -> Result
             "This does not look like a screen sharing (VNC) server. Check the address and port.",
         )
     })?;
+    let server_version = format!("{major}.{minor}");
     // RealVNC Server announces version 5.0 and falls back to 3.8.
     let realvnc = major >= 4;
     let minor = if major > 3 || minor >= 8 {
@@ -164,7 +167,7 @@ pub async fn negotiate(mut stream: BoxedStream, ui: &mut Prompter<'_>) -> Result
     stream.write_all(&[ui.options.shared as u8]).await?;
     stream.flush().await?;
     let init = read_server_init(&mut stream).await?;
-    Ok(Negotiated { stream, security, encrypted, version: format!("3.{minor}"), init })
+    Ok(Negotiated { stream, security, encrypted, version: format!("3.{minor}"), server_version, init })
 }
 
 fn parse_version(b: &[u8; 12]) -> Option<(u32, u32)> {

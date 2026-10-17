@@ -76,18 +76,18 @@ pub fn show(app: &mut App, ui: &mut Ui, sidebar: Option<SidebarMode>) {
                     let color = status_color(&p, Some(&tab.status));
                     let (dot, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
                     ui.painter().circle_filled(dot.center(), 4.0, color);
-                    ui.label(RichText::new(tab.title()).font(semibold(14.0)).color(p.text));
+                    header_text(ui, tab.title().to_string(), semibold(14.0), p.text);
                     let detail = format!("{} · {}", tab.conn.address_label(), status_text(Some(&tab.status)));
-                    ui.label(RichText::new(detail).font(medium(12.5)).color(p.text_weak));
+                    header_text(ui, detail, medium(12.5), p.text_weak);
                 }
             }
             page => {
-                ui.label(RichText::new(title(app, page)).font(semibold(14.0)).color(p.text));
+                header_text(ui, title(app, page).to_string(), semibold(15.0), p.text);
             }
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| match app.page {
             Page::Saved => {
-                if small_button(ui, icon::PLUS, "New connection", control).clicked() {
+                if super::widgets::primary_header_button(ui, icon::PLUS, "New connection", control).clicked() {
                     action = Some(Action::NewConnection);
                 }
             }
@@ -127,6 +127,14 @@ fn title(app: &App, page: Page) -> &'static str {
         }
         Page::Session(_) => "",
     }
+}
+
+/// Text in the header, centred on the same line as the window buttons (drawn
+/// like the side menu's labels, so every text in the header lines up).
+fn header_text(ui: &mut Ui, text: String, font: egui::FontId, color: egui::Color32) {
+    let galley = ui.painter().layout_no_wrap(text, font, color);
+    let (rect, _) = ui.allocate_exact_size(vec2(galley.size().x, ui.available_height()), Sense::hover());
+    super::widgets::paint_left_center(ui, galley, rect.left(), rect.center().y, color);
 }
 
 /// A compact button with an icon, sized for the header.

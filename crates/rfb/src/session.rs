@@ -138,6 +138,9 @@ pub struct ServerInfo {
     pub encrypted: bool,
     /// e.g. "3.8"
     pub protocol_version: String,
+    /// The version the server announced: "3.8" for most servers, "3.889" for
+    /// a Mac's built-in Screen Sharing, "5.0" for RealVNC Server.
+    pub server_version: String,
     /// Whether the server can change its screen size on request.
     pub can_resize: bool,
     /// Whether the server accepts physical key positions.

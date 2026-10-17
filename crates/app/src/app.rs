@@ -85,13 +85,10 @@ pub struct DiscoveryState {
 
 #[derive(Default)]
 pub struct HomeState {
-    pub quick_address: String,
-    pub quick_error: Option<String>,
     /// Thumbnails by connection id (`None`: no picture saved).
     pub thumbnails: HashMap<String, Option<egui::TextureHandle>>,
     /// Connection waiting for "really delete?".
     pub confirm_delete: Option<String>,
-    pub focus_quick_connect: bool,
 }
 
 /// What the content area shows (chosen in the side menu).
@@ -202,7 +199,7 @@ impl App {
             page: Page::Saved,
             previous_page: Page::Saved,
             next_tab_id: 1,
-            home: HomeState { focus_quick_connect: true, ..HomeState::default() },
+            home: HomeState::default(),
             editor: None,
             toasts: Vec::new(),
             next_toast_id: 1,
@@ -232,13 +229,12 @@ impl App {
 
     // ----- Connections and tabs -------------------------------------------------
 
-    /// Connect to what the user typed in the quick-connect field.
+    /// Connect to an address given on the command line (`--connect`).
     pub fn quick_connect(&mut self, text: &str) {
         let Some((host, port)) = parse_address(text) else {
-            self.home.quick_error = Some("Please type an address, for example raspberrypi.local".into());
+            self.toast(format!("“{text}” is not an address Mini Remote understands, for example raspberrypi.local."));
             return;
         };
-        self.home.quick_error = None;
         let existing = self
             .connections
             .iter()
@@ -315,9 +311,6 @@ impl App {
             self.previous_page = self.page;
         }
         self.page = page;
-        if page == Page::Saved {
-            self.home.focus_quick_connect = true;
-        }
         if page == Page::Find {
             self.start_discovery(false);
         }

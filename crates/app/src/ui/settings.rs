@@ -3,13 +3,13 @@
 
 use egui::{ComboBox, Response, RichText, Ui};
 
-use super::home::page;
+use super::home::centered_page;
 use super::icon;
 use super::theme::{Palette, medium};
 use super::toolbar::quality_options;
 use super::widgets::{row_divider, row_hint, section_card, secondary_button, segmented, setting_row, toggle};
 use crate::app::App;
-use crate::model::{AltMapping, Appearance, KeyboardMode, MetaMapping};
+use crate::model::{AltMapping, Appearance, KeyboardMode, MetaMapping, RemoteSystem};
 use rfb::Quality;
 
 /// Plain-English help for letters that don't arrive on the Pi.
@@ -39,7 +39,7 @@ pub fn page_ui(app: &mut App, ui: &mut Ui) {
     let mut choose_folder = false;
     let download_folder = app.settings.download_folder();
 
-    page(ui, "settings-page", SETTINGS_WIDTH, |ui, _| {
+    centered_page(ui, "settings-page", SETTINGS_WIDTH, |ui, _| {
         let s = &mut app.settings;
         ui.add_space(-24.0);
 
@@ -52,7 +52,11 @@ pub fn page_ui(app: &mut App, ui: &mut Ui) {
 
         section_card(ui, icon::KEYBOARD, "Keyboard", |ui| {
             let meta = format!("{} key acts as", crate::platform::meta_key_label());
-            setting_row(ui, &meta, Some("Control makes copy, paste and undo work as on the Mac."), |ui| {
+            setting_row(ui, "Remote computer", Some("For new connections. Automatic recognises a Mac; others get Linux keys."), |ui| {
+                segmented(ui, &mut s.default_remote_system, &RemoteSystem::OPTIONS)
+            });
+            row_divider(ui);
+            setting_row(ui, &meta, Some("On Linux and Windows. Control makes copy and paste work as on the Mac."), |ui| {
                 segmented(ui, &mut s.meta_key, &[(MetaMapping::Control, "Control"), (MetaMapping::Super, "Windows key")])
             });
             row_divider(ui);

@@ -43,4 +43,5 @@ keyring = { version = "3", features = ["apple-native"] }
 rfd = { version = "0.17", default-features = false }
 # Reading the window's title bar height for the app-drawn header.
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSView", "NSWindow", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSButton", "NSControl", "NSResponder", "NSToolbar", "NSView", "NSWindow", "objc2-core-foundation"] }

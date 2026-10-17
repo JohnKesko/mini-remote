@@ -124,13 +124,17 @@ pub fn title_style() -> TextStyle {
     TextStyle::Name("Title".into())
 }
 
+/// How far glyphs are moved, as a fraction of the font size (negative = up).
+pub const TEXT_LIFT: f32 = -0.07;
+
 /// Inter first, then egui's own fonts and the icon font as fallbacks
 /// (for emoji, symbols and icons). Monospace stays egui's Hack.
 fn fonts() -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
-    // Inter sits a little high in its line box; nudge it down so text looks
-    // centred in buttons and fields.
-    let tweak = FontTweak { y_offset_factor: 0.04, ..FontTweak::default() };
+    // egui centres the whole line box, which includes room for descenders, so
+    // Inter's letters look low. Measured on buttons: lifting the glyphs by 7%
+    // of the font size centres the letters (top of capitals to baseline).
+    let tweak = FontTweak { y_offset_factor: TEXT_LIFT, ..FontTweak::default() };
     for (name, bytes) in [("Inter", INTER_REGULAR), ("Inter-Medium", INTER_MEDIUM), ("Inter-SemiBold", INTER_SEMIBOLD)] {
         fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(bytes).tweak(tweak.clone())));
     }

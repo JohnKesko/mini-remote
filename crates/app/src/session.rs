@@ -19,7 +19,7 @@ use ssh::{SshError, SshSession, TunnelStream};
 use crate::files::FilesPanel;
 use crate::input::keyboard::{KeyConfig, KeyMsg, Keyboard};
 use crate::input::mouse::WheelAccumulator;
-use crate::model::{Connection, KeyboardMode, Settings, SshLogin};
+use crate::model::{AltMapping, Connection, KeyboardMode, MetaMapping, RemoteSystem, Settings, SshLogin};
 use crate::remote_login::{self, HostKeyLink, Missing};
 use crate::texture::RemoteTexture;
 
@@ -661,10 +661,18 @@ impl SessionTab {
         self.status.is_connected() && self.prompt.is_none() && !self.conn.view_only
     }
 
+    /// What kind of computer this is, once known (Automatic is resolved).
+    pub fn remote_system(&self) -> RemoteSystem {
+        self.conn.remote_system.resolve(self.server.as_ref().map(|s| s.server_version.as_str()))
+    }
+
     pub fn key_config(&self, settings: &Settings) -> KeyConfig {
+        // On a Mac, Command stays Command (sent as the Super key, which Mac
+        // servers treat as Command) and Option stays Option.
+        let mac = self.remote_system() == RemoteSystem::Mac;
         KeyConfig {
-            meta: settings.meta_key,
-            alt: settings.alt_key,
+            meta: if mac { MetaMapping::Super } else { settings.meta_key },
+            alt: if mac { AltMapping::Alt } else { settings.alt_key },
             physical: self.physical_keys,
             caps_lock_reports_state: crate::platform::caps_lock_reports_state(),
         }

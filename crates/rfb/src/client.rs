@@ -140,6 +140,7 @@ where
             security: neg.security.clone(),
             encrypted: neg.encrypted,
             protocol_version: neg.version.clone(),
+            server_version: neg.server_version.clone(),
             can_resize: false,
             physical_keys: false,
         },

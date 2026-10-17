@@ -121,7 +121,16 @@ impl Runner {
         });
 
         let mut app = App::new(ctx.clone(), gpu, wake, self.connect.take());
+        crate::platform::window_chrome(&window, false);
         app.set_title_bar_height(crate::platform::title_bar_height(&window));
+        #[cfg(all(debug_assertions, target_os = "macos"))]
+        if std::env::var("MINI_REMOTE_DEBUG_HITTEST").is_ok() {
+            let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+            for (x, y) in [(size.width - 100.0, 12.0), (size.width - 100.0, 32.0), (size.width - 100.0, 58.0), (size.width / 2.0, 300.0)] {
+                log::info!("hit test at ({x:.0}, {y:.0}): {}", crate::platform::macos::debug_hit_test(&window, x, y));
+            }
+            log::info!("title bar height: {}", crate::platform::title_bar_height(&window));
+        }
         window.request_redraw();
         let resize_test = std::env::var("MINI_REMOTE_RESIZE_TEST").ok().filter(|v| !v.is_empty() && v != "0").map(|v| {
             let delay = v.parse::<f64>().ok().filter(|d| *d > 1.0).unwrap_or(0.0);
@@ -188,7 +197,9 @@ impl ApplicationHandler<UserEvent> for Runner {
                     }
                     state.painter.on_window_resized(ViewportId::ROOT, w, h);
                 }
-                state.app.sync_fullscreen(state.window.fullscreen().is_some());
+                let fullscreen = state.window.fullscreen().is_some();
+                state.app.sync_fullscreen(fullscreen);
+                crate::platform::window_chrome(&state.window, fullscreen);
                 state.app.set_title_bar_height(crate::platform::title_bar_height(&state.window));
             }
             WindowEvent::Focused(focused) => {
@@ -309,6 +320,7 @@ impl State {
             match request {
                 WindowRequest::Title(title) => self.window.set_title(&title),
                 WindowRequest::Fullscreen(on) => {
+                    crate::platform::window_chrome(&self.window, on);
                     self.window.set_fullscreen(on.then_some(Fullscreen::Borderless(None)));
                 }
                 WindowRequest::Theme(appearance) => {

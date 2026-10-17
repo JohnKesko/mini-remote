@@ -24,6 +24,47 @@ pub enum KeyboardMode {
     Physical,
 }
 
+/// What kind of computer is on the other end. It decides what the Mac's
+/// Command and Option keys send, so copy, paste and shortcuts work there.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RemoteSystem {
+    /// Recognise a Mac by its built-in Screen Sharing; any other computer
+    /// gets Linux keys (Windows uses the same keys).
+    #[default]
+    Automatic,
+    Linux,
+    Windows,
+    Mac,
+}
+
+impl RemoteSystem {
+    pub const OPTIONS: [(RemoteSystem, &'static str); 4] = [
+        (RemoteSystem::Automatic, "Automatic"),
+        (RemoteSystem::Linux, "Linux"),
+        (RemoteSystem::Windows, "Windows"),
+        (RemoteSystem::Mac, "Mac"),
+    ];
+
+    /// The system to use once connected. `server_version` is the version the
+    /// server announced (a Mac's built-in Screen Sharing says "3.889").
+    pub fn resolve(self, server_version: Option<&str>) -> RemoteSystem {
+        match self {
+            RemoteSystem::Automatic if server_version == Some("3.889") => RemoteSystem::Mac,
+            RemoteSystem::Automatic => RemoteSystem::Linux,
+            other => other,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            RemoteSystem::Automatic => "Automatic",
+            RemoteSystem::Linux => "Linux (Raspberry Pi)",
+            RemoteSystem::Windows => "Windows",
+            RemoteSystem::Mac => "Mac",
+        }
+    }
+}
+
 /// What the Command key (Windows key elsewhere) sends to the remote computer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MetaMapping {
@@ -115,6 +156,8 @@ pub struct Connection {
     pub view_only: bool,
     pub share_clipboard: bool,
     pub keyboard_mode: KeyboardMode,
+    /// What kind of computer this is (decides what Command and Option send).
+    pub remote_system: RemoteSystem,
     pub allow_unencrypted: bool,
     pub ssh: SshSettings,
     /// Seconds since 1970 of the last successful connection.
@@ -137,6 +180,7 @@ impl Default for Connection {
             view_only: false,
             share_clipboard: true,
             keyboard_mode: KeyboardMode::Characters,
+            remote_system: RemoteSystem::Automatic,
             allow_unencrypted: false,
             ssh: SshSettings::default(),
             last_used: None,
@@ -153,6 +197,7 @@ impl Connection {
             video: settings.default_video,
             allow_unencrypted: settings.default_allow_unencrypted,
             keyboard_mode: settings.keyboard_mode,
+            remote_system: settings.default_remote_system,
             share_clipboard: settings.share_clipboard,
             ..Connection::default()
         }
@@ -215,6 +260,8 @@ pub struct Settings {
     pub alt_key: AltMapping,
     /// Default for new connections.
     pub keyboard_mode: KeyboardMode,
+    /// Default for new connections: what kind of computer they are.
+    pub default_remote_system: RemoteSystem,
     /// Master switch; each connection can also turn it off.
     pub share_clipboard: bool,
     /// Default for new connections.
@@ -250,6 +297,7 @@ impl Default for Settings {
             meta_key: crate::platform::default_meta_mapping(),
             alt_key: crate::platform::default_alt_mapping(),
             keyboard_mode: KeyboardMode::Characters,
+            default_remote_system: RemoteSystem::Automatic,
             share_clipboard: true,
             default_quality: Quality::Automatic,
             default_video: false,
@@ -364,5 +412,21 @@ mod tests {
         assert_eq!(c.address_label(), "pi:5901");
         c.name = "Living room".into();
         assert_eq!(c.display_name(), "Living room");
+    }
+}
+
+#[cfg(test)]
+mod remote_system_tests {
+    use super::RemoteSystem;
+
+    #[test]
+    fn automatic_recognises_a_mac_and_treats_the_rest_as_linux() {
+        assert_eq!(RemoteSystem::Automatic.resolve(Some("3.889")), RemoteSystem::Mac);
+        assert_eq!(RemoteSystem::Automatic.resolve(Some("3.8")), RemoteSystem::Linux);
+        assert_eq!(RemoteSystem::Automatic.resolve(Some("5.0")), RemoteSystem::Linux);
+        assert_eq!(RemoteSystem::Automatic.resolve(None), RemoteSystem::Linux);
+        // A choice made by the user always wins.
+        assert_eq!(RemoteSystem::Windows.resolve(Some("3.889")), RemoteSystem::Windows);
+        assert_eq!(RemoteSystem::Mac.resolve(Some("3.8")), RemoteSystem::Mac);
     }
 }

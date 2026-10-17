@@ -57,7 +57,7 @@ The first time you open it, your Mac asks if Mini Remote may find devices on you
 
 ## 3. Connect to your Pi
 
-1. Type your Pi's name or address in the box at the top of **Saved connections**. Most Pis are called `raspberrypi.local`. You can also open **Find devices** and pick your Pi from the list.
+1. Click **New connection** (top right, or in the sidebar) and type your Pi's name or address. Most Pis are called `raspberrypi.local`. Or open **Find devices** and pick your Pi from the list.
 2. Log in with the same username and password you use on the Pi itself.
 3. The first time, Mini Remote asks if this is really your Pi. Click **Yes, connect**. It remembers the answer and warns you if the Pi ever looks different.
 
@@ -83,7 +83,7 @@ Move the mouse to the top of the Pi's screen to show the toolbar. From there you
 - **Control + Command + S**: show or hide the sidebar.
 - **Control + Command + W**: disconnect.
 
-You can change how the Command and Option keys behave in **Settings**.
+Mini Remote sets up the keys for the kind of computer you connect to. A Raspberry Pi (or any Linux or Windows computer) gets Command as Ctrl. If you connect to a Mac, Mini Remote notices it and keeps Command as Command, so copy and paste work there too. If it guesses wrong, choose **Remote computer** (Automatic, Linux, Windows or Mac) in the connection's settings. You can also change how the Command and Option keys behave in **Settings**.
 
 ## Move files
 

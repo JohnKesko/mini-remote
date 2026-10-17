@@ -282,6 +282,9 @@ fn info_panel(app: &mut App, ctx: &egui::Context, index: usize, bar: Rect, opaci
         };
         rows.push(("Encrypted", encrypted));
         rows.push(("Keyboard", if tab.physical_keys_active() { "Physical keys".into() } else { "Characters".into() }));
+        let system = tab.remote_system().label();
+        let how = if tab.conn.remote_system == crate::model::RemoteSystem::Automatic { " (recognised)" } else { "" };
+        rows.push(("Remote computer", format!("{system}{how}")));
         rows.push(("Protocol", format!("VNC {}", s.protocol_version)));
     }
     if let Some(st) = &tab.stats {

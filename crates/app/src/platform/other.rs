@@ -78,6 +78,9 @@ pub fn window_attributes(attrs: WindowAttributes) -> WindowAttributes {
 }
 
 /// The native title bar is kept here, so the app header has no window buttons.
+/// Other systems keep their normal title bar.
+pub fn window_chrome(_window: &egui_winit::winit::window::Window, _fullscreen: bool) {}
+
 pub fn title_bar_height(_window: &egui_winit::winit::window::Window) -> f32 {
     0.0
 }

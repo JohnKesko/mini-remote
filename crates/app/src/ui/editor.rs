@@ -4,7 +4,7 @@
 
 use egui::{Align, ComboBox, Frame, Layout, Margin, Response, Ui};
 
-use super::home::{PAGE_MARGIN, page};
+use super::home::centered_page;
 use super::icon;
 use super::settings::quality_combo;
 use super::theme::Palette;
@@ -13,7 +13,7 @@ use super::widgets::{
     secondary_button, segmented, setting_row, text_field, toggle, warning_box,
 };
 use crate::app::{App, EditorState};
-use crate::model::{KeyboardMode, Scaling, SshLogin};
+use crate::model::{KeyboardMode, RemoteSystem, Scaling, SshLogin};
 
 const EDITOR_WIDTH: f32 = 640.0;
 
@@ -38,9 +38,9 @@ pub fn page_ui(app: &mut App, ui: &mut Ui) {
     egui::Panel::bottom("editor-buttons")
         .frame(Frame::new().fill(p.bg).inner_margin(Margin::symmetric(0, 12)))
         .show(ui, |ui| {
-            let width = (ui.available_width() - 2.0 * PAGE_MARGIN).clamp(240.0, EDITOR_WIDTH);
+            let (width, inset) = super::home::page_column(ui.available_width(), EDITOR_WIDTH, true);
             ui.horizontal(|ui| {
-                ui.add_space(PAGE_MARGIN);
+                ui.add_space(inset);
                 ui.allocate_ui_with_layout(egui::vec2(width, 32.0), Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
                     if primary_button(ui, "Save and connect").clicked() {
@@ -60,7 +60,7 @@ pub fn page_ui(app: &mut App, ui: &mut Ui) {
         });
 
     egui::CentralPanel::no_frame().show(ui, |ui| {
-        page(ui, "editor-page", EDITOR_WIDTH, |ui, _| {
+        centered_page(ui, "editor-page", EDITOR_WIDTH, |ui, _| {
             ui.add_space(-24.0);
             general(ui, editor, store_name, store_available);
             picture(ui, editor);
@@ -163,6 +163,13 @@ fn control(ui: &mut Ui, e: &mut EditorState) {
             let options = [(KeyboardMode::Characters, "Characters"), (KeyboardMode::Physical, "Physical keys")];
             segmented(ui, &mut e.conn.keyboard_mode, &options)
         });
+        row_divider(ui);
+        let hint = match e.conn.remote_system {
+            RemoteSystem::Automatic => "Recognises a Mac; any other computer gets Linux keys.",
+            RemoteSystem::Linux | RemoteSystem::Windows => "Command works as Control, so Cmd+C and Cmd+V copy and paste.",
+            RemoteSystem::Mac => "Command stays Command, Option stays Option.",
+        };
+        setting_row(ui, "Remote computer", Some(hint), |ui| segmented(ui, &mut e.conn.remote_system, &RemoteSystem::OPTIONS));
     });
 }
 

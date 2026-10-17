@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::model::{AltMapping, MetaMapping};
 
 #[cfg(target_os = "macos")]
-mod macos;
+pub(crate) mod macos;
 #[cfg(target_os = "macos")]
 use macos as imp;
 
@@ -153,6 +153,12 @@ pub fn open_url(url: &str) {
     if let Err(err) = imp::open_url(url) {
         log::warn!("could not open {url}: {err}");
     }
+}
+
+/// Window decoration that depends on full screen (on macOS: a taller,
+/// unified title bar in a normal window, nothing in full screen).
+pub fn window_chrome(window: &egui_winit::winit::window::Window, fullscreen: bool) {
+    imp::window_chrome(window, fullscreen)
 }
 
 /// Height of the title bar the app draws its header under (0 when the system

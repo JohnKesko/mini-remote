@@ -2,7 +2,7 @@
 //! page (computers found on the local network).
 
 use egui::{
-    Align, Align2, Color32, CornerRadius, Frame, Id, Key, Layout, Margin, Rect, RichText, Sense, Stroke, Ui,
+    Align, Align2, Color32, CornerRadius, Id, Layout, Margin, Rect, RichText, Sense, Stroke, Ui,
     pos2, vec2,
 };
 
@@ -21,7 +21,6 @@ pub const PAGE_WIDTH: f32 = 980.0;
 pub const PAGE_MARGIN: f32 = 40.0;
 
 enum Action {
-    QuickConnect,
     Connect(Connection),
     Edit(Connection),
     AskDelete(String),
@@ -32,11 +31,27 @@ enum Action {
 /// A scrollable page: a column of at most `max_width`, the same margin from
 /// the left on every page (lined up with the title in the header).
 pub fn page(ui: &mut Ui, id: &str, max_width: f32, add: impl FnOnce(&mut Ui, f32)) {
+    page_with(ui, id, max_width, false, add);
+}
+
+/// A form page (New connection, Settings): the column is centred in the window.
+pub fn centered_page(ui: &mut Ui, id: &str, max_width: f32, add: impl FnOnce(&mut Ui, f32)) {
+    page_with(ui, id, max_width, true, add);
+}
+
+/// Width of a page column and its distance from the left edge, on whole pixels.
+pub fn page_column(available: f32, max_width: f32, centered: bool) -> (f32, f32) {
+    let width = (available - 2.0 * PAGE_MARGIN).clamp(240.0, max_width).round();
+    let inset = if centered { ((available - width) / 2.0).max(PAGE_MARGIN).floor() } else { PAGE_MARGIN };
+    (width, inset)
+}
+
+fn page_with(ui: &mut Ui, id: &str, max_width: f32, centered: bool, add: impl FnOnce(&mut Ui, f32)) {
     egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).show(ui, |ui| {
-        let width = (ui.available_width() - 2.0 * PAGE_MARGIN).clamp(240.0, max_width);
+        let (width, inset) = page_column(ui.available_width(), max_width, centered);
         ui.add_space(24.0);
         ui.horizontal(|ui| {
-            ui.add_space(PAGE_MARGIN);
+            ui.add_space(inset);
             ui.vertical(|ui| {
                 ui.set_width(width);
                 add(ui, width);
@@ -64,9 +79,7 @@ pub fn saved_page(app: &mut App, ui: &mut Ui) {
     let p = Palette::of(ui.ctx());
     let mut action = None;
     page(ui, "saved-page", PAGE_WIDTH, |ui, width| {
-        page_intro(ui, "Connect to your Raspberry Pi by typing its name or address, or pick a saved one.");
-        quick_connect(app, ui, &p, &mut action);
-        ui.add_space(28.0);
+        page_intro(ui, "Your saved Raspberry Pis. Add one with New connection, or find it with Find devices.");
         saved_connections(app, ui, &p, width, &mut action);
     });
     apply(app, action);
@@ -84,59 +97,12 @@ pub fn find_page(app: &mut App, ui: &mut Ui) {
 
 fn apply(app: &mut App, action: Option<Action>) {
     match action {
-        Some(Action::QuickConnect) => {
-            let text = app.home.quick_address.clone();
-            app.quick_connect(&text);
-            if app.home.quick_error.is_none() {
-                app.home.quick_address.clear();
-            }
-        }
         Some(Action::Connect(conn)) => app.open_connection(conn, None),
         Some(Action::Edit(conn)) => app.open_editor(conn, false, None),
         Some(Action::AskDelete(id)) => app.home.confirm_delete = Some(id),
         Some(Action::ConnectFound(host)) => app.connect_discovered(&host),
         Some(Action::SaveFound(host)) => app.save_discovered(&host),
         None => {}
-    }
-}
-
-fn quick_connect(app: &mut App, ui: &mut Ui, p: &Palette, action: &mut Option<Action>) {
-    card(p).inner_margin(Margin::same(10)).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.add_space(6.0);
-            ui.label(ic(icon::MONITOR).size(22.0).color(p.accent));
-            let button_width = 120.0;
-            let field_width = ui.available_width() - button_width - ui.spacing().item_spacing.x;
-            let edit = egui::TextEdit::singleline(&mut app.home.quick_address)
-                .hint_text("Pi address, e.g. raspberrypi.local")
-                .font(egui::FontId::proportional(17.0))
-                .frame(Frame::NONE)
-                .margin(Margin::symmetric(8, 0))
-                .vertical_align(Align::Center)
-                .min_size(vec2(field_width, 40.0))
-                .desired_width(field_width);
-            let response = ui.add(edit);
-            if app.home.focus_quick_connect {
-                response.request_focus();
-                app.home.focus_quick_connect = false;
-            }
-            if response.changed() {
-                app.home.quick_error = None;
-            }
-            let enter = response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-            let button = egui::Button::new(RichText::new("Connect").font(medium(15.0)).color(p.on_accent))
-                .fill(p.accent)
-                .stroke(Stroke::NONE)
-                .corner_radius(CornerRadius::same(8))
-                .min_size(vec2(button_width, 40.0));
-            if ui.add(button).clicked() || enter {
-                *action = Some(Action::QuickConnect);
-            }
-        });
-    });
-    if let Some(err) = &app.home.quick_error {
-        ui.add_space(4.0);
-        super::widgets::error_line(ui, err);
     }
 }
 
