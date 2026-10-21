@@ -34,7 +34,6 @@ enum Action {
     Show(Page),
     New,
     Close(u64),
-    Collapse,
 }
 
 pub fn show(app: &mut App, ui: &mut Ui, mode: SidebarMode) {
@@ -104,23 +103,11 @@ pub fn show(app: &mut App, ui: &mut Ui, mode: SidebarMode) {
             });
     }
 
-    // Settings (and the collapse button) at the bottom.
+    // Settings at the bottom. The sidebar is resized from the session toolbar.
     let bottom = Rect::from_min_max(pos2(full.left(), full.bottom() - ITEM_HEIGHT - 6.0), full.max);
-    super::widgets::in_rect(ui, bottom, egui::Layout::left_to_right(egui::Align::Center), |ui| {
-        let in_session = matches!(page, Page::Session(_));
-        let width = if in_session && !rail { ui.available_width() - 40.0 } else { ui.available_width() };
-        let item_rect = Rect::from_min_size(ui.cursor().min, vec2(width, ITEM_HEIGHT));
-        super::widgets::in_rect(ui, item_rect, egui::Layout::top_down(egui::Align::Min), |ui| {
-            if item(ui, &p, rail, icon::GEAR_SIX, "Settings", page == Page::Settings, None).clicked() {
-                action = Some(Action::Show(Page::Settings));
-            }
-        });
-        if in_session && !rail {
-            ui.add_space(width + 4.0);
-            let tip = format!("Make the menu smaller ({})", crate::platform::shortcut_label("S"));
-            if super::widgets::icon_button(ui, icon::SIDEBAR_SIMPLE, &tip).clicked() {
-                action = Some(Action::Collapse);
-            }
+    super::widgets::in_rect(ui, bottom, egui::Layout::top_down(egui::Align::Min), |ui| {
+        if item(ui, &p, rail, icon::GEAR_SIX, "Settings", page == Page::Settings, None).clicked() {
+            action = Some(Action::Show(Page::Settings));
         }
     });
 
@@ -128,7 +115,6 @@ pub fn show(app: &mut App, ui: &mut Ui, mode: SidebarMode) {
         Some(Action::Show(page)) => app.show_page(page),
         Some(Action::New) => app.open_editor_new(),
         Some(Action::Close(id)) => app.close_tab(id),
-        Some(Action::Collapse) => app.cycle_sidebar(),
         None => {}
     }
 }
