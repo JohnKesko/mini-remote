@@ -5,7 +5,7 @@ use egui::{ComboBox, Response, RichText, Ui};
 
 use super::home::centered_page;
 use super::icon;
-use super::theme::{Palette, medium};
+use super::theme::Palette;
 use super::toolbar::quality_options;
 use super::widgets::{row_divider, row_hint, section_card, secondary_button, segmented, setting_row, toggle};
 use crate::app::App;
@@ -38,6 +38,9 @@ pub fn page_ui(app: &mut App, ui: &mut Ui) {
     let before = app.settings.clone();
     let mut choose_folder = false;
     let download_folder = app.settings.download_folder();
+    let mut check_now = false;
+    let checking = app.updater.busy();
+    let update_status = update_status_text(&app.updater.status);
 
     centered_page(ui, "settings-page", SETTINGS_WIDTH, |ui, _| {
         let s = &mut app.settings;
@@ -122,7 +125,7 @@ pub fn page_ui(app: &mut App, ui: &mut Ui) {
         });
 
         section_card(ui, icon::FOLDER_SIMPLE, "Files", |ui| {
-            let shown = download_folder.display().to_string();
+            let shown = short_path(&download_folder);
             setting_row(ui, "Save copied files in", Some(&shown), |ui| {
                 let r = secondary_button(ui, "Change…");
                 if r.clicked() {
@@ -133,19 +136,56 @@ pub fn page_ui(app: &mut App, ui: &mut Ui) {
         });
 
         section_card(ui, icon::INFO, "About", |ui| {
-            ui.add_space(12.0);
-            ui.spacing_mut().item_spacing.y = 2.0;
-            ui.label(RichText::new(format!("Mini Remote {}", env!("CARGO_PKG_VERSION"))).font(medium(14.0)));
-            ui.label(RichText::new("Free software under the MIT licence.").size(12.5).color(p.text_weak));
-            ui.label(RichText::new("Inter font, SIL Open Font License.").size(12.5).color(p.text_weak));
-            ui.add_space(12.0);
+            let version = format!("Mini Remote {}", update::current_version());
+            setting_row(ui, &version, Some(&update_status), |ui| {
+                ui.add_enabled_ui(!checking, |ui| {
+                    if secondary_button(ui, "Check for updates").clicked() {
+                        check_now = true;
+                    }
+                })
+                .response
+            });
+            row_divider(ui);
+            setting_row(ui, "Check for updates at start", Some("Mini Remote always asks before installing."), |ui| {
+                toggle(ui, &mut s.check_updates)
+            });
+            row_divider(ui);
+            row_hint(ui, "Free software under the MIT licence. Inter font, SIL Open Font License.");
         });
     });
 
+    if check_now {
+        app.check_for_updates();
+    }
     if choose_folder {
         app.choose_download_folder();
     }
     if app.settings != before {
         app.save_settings();
+    }
+}
+
+/// One line about updates for the About section.
+fn update_status_text(status: &crate::updater::Status) -> String {
+    use crate::updater::Status;
+    match status {
+        Status::Checking { manual: true } => "Checking for updates…".into(),
+        Status::UpToDate => "You have the latest version.".into(),
+        Status::Available(release) => format!("Version {} is available.", release.version),
+        Status::Downloading { release, .. } => format!("Updating to version {}…", release.version),
+        Status::Restarting => "Restarting…".into(),
+        Status::Failed { message, .. } => message.clone(),
+        Status::Idle | Status::Checking { manual: false } => "Free and open source.".into(),
+    }
+}
+
+/// A folder path with the home folder written as "~" (shorter, and it keeps
+/// the account name out of sight).
+fn short_path(path: &std::path::Path) -> String {
+    let home = directories::UserDirs::new().map(|d| d.home_dir().to_path_buf());
+    match home.and_then(|h| path.strip_prefix(&h).ok().map(|rest| rest.to_path_buf())) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
     }
 }

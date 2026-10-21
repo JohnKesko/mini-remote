@@ -6,6 +6,7 @@ members = [
     "crates/ssh",
     "crates/discovery",
     "crates/app",
+    "crates/update",
 ]
 
 [workspace.package]
@@ -19,6 +20,7 @@ mini-remote-codec = { path = "crates/codec" }
 mini-remote-rfb = { path = "crates/rfb" }
 mini-remote-ssh = { path = "crates/ssh" }
 mini-remote-discovery = { path = "crates/discovery" }
+mini-remote-update = { path = "crates/update" }
 tokio = { version = "1", features = ["full"] }
 thiserror = "2"
 log = "0.4"

@@ -277,6 +277,10 @@ pub struct Settings {
     pub download_dir: Option<String>,
     /// Side menu size while a remote screen is shown.
     pub sidebar: SidebarMode,
+    /// Look for a new version when the app starts.
+    pub check_updates: bool,
+    /// A version the user chose to skip.
+    pub skipped_version: Option<String>,
 }
 
 impl Settings {
@@ -306,6 +310,8 @@ impl Default for Settings {
             escape_leaves_fullscreen: true,
             download_dir: None,
             sidebar: SidebarMode::Full,
+            check_updates: true,
+            skipped_version: None,
         }
     }
 }

@@ -1,0 +1,10 @@
+# Only what the Linux build needs is sent to Docker.
+*
+!Cargo.toml
+!Cargo.lock
+!LICENSE
+!crates
+!assets
+!scripts/linux
+crates/**/target
+**/.DS_Store

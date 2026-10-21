@@ -13,6 +13,7 @@ path = "src/main.rs"
 mini-remote-rfb.workspace = true
 mini-remote-ssh.workspace = true
 mini-remote-discovery.workspace = true
+mini-remote-update.workspace = true
 tokio.workspace = true
 log.workspace = true
 parking_lot.workspace = true
@@ -45,3 +46,12 @@ rfd = { version = "0.17", default-features = false }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSButton", "NSControl", "NSResponder", "NSToolbar", "NSView", "NSWindow", "objc2-core-foundation"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Passwords are kept in the desktop's password store (GNOME Keyring, KWallet)
+# through the Secret Service. Pure Rust D-Bus, so nothing is linked at build
+# time and nothing extra is needed at run time.
+keyring = { version = "3", features = ["async-secret-service", "async-io", "crypto-rust"] }
+# The system "choose files" window through the desktop portal (libdbus is
+# loaded only when it opens), with zenity as a fallback. No GTK.
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }

@@ -30,6 +30,8 @@ pub enum WindowRequest {
     /// Debug builds: resize the window (for checking layouts).
     #[allow(dead_code)]
     Size(f32, f32),
+    /// Quit the app (after installing an update).
+    Quit,
 }
 
 /// Results of work done on background threads.
@@ -118,6 +120,7 @@ pub struct App {
     pub(crate) gpu: egui_wgpu::RenderState,
     runtime: tokio::runtime::Runtime,
     wake: Wake,
+    pub updater: crate::updater::Updater,
     pub(crate) storage: Storage,
     pub(crate) secrets: Box<dyn SecretStore>,
     pub(crate) settings: Settings,
@@ -152,6 +155,8 @@ pub struct App {
     debug_open: Vec<String>,
     /// Debug builds only: press the toolbar's Disconnect button at this time.
     pub(crate) debug_disconnect_at: Option<Instant>,
+    /// Debug builds only: press "Update now" as soon as an update is offered.
+    debug_accept_update: bool,
 }
 
 /// Build the environment a session needs from the app's fields.
@@ -189,6 +194,7 @@ impl App {
             gpu,
             runtime,
             wake,
+            updater: Default::default(),
             storage,
             // With a separate config folder, never touch the real Keychain.
             secrets: if storage::custom_dir().is_some() { platform::memory_store() } else { platform::secret_store() },
@@ -217,9 +223,13 @@ impl App {
             title_bar: 0.0,
             debug_open: Vec::new(),
             debug_disconnect_at: None,
+            debug_accept_update: false,
         };
         app.requests.push(WindowRequest::Theme(Some(appearance)));
         app.debug_startup();
+        if app.settings.check_updates {
+            app.updater.check(app.runtime.handle(), app.wake.clone(), false);
+        }
         match connect_to {
             Some(address) => app.quick_connect(&address),
             None => app.start_discovery(false),
@@ -745,6 +755,22 @@ impl App {
     /// Everything that happens before the UI is drawn: session events, timers,
     /// picture uploads, clipboard, background results.
     pub(crate) fn update(&mut self) {
+        // New versions.
+        if let Some(notice) = self.updater.poll(self.settings.skipped_version.as_deref()) {
+            match notice {
+                crate::updater::Notice::Found(release) => {
+                    log::info!("version {} is available", release.version);
+                    if self.debug_accept_update {
+                        self.start_update();
+                    }
+                }
+                crate::updater::Notice::Restart(installed) => match update::schedule_restart(&installed) {
+                    Ok(()) => self.requests.push(WindowRequest::Quit),
+                    Err(e) => self.toast(format!("The update is installed. Please restart Mini Remote. ({e})")),
+                },
+            }
+        }
+
         while let Ok(result) = self.bg_rx.try_recv() {
             match result {
                 BgResult::ScreenshotSaved(path) => {
@@ -867,7 +893,7 @@ impl App {
         }
     }
 
-    /// Debug builds: `MINI_REMOTE_DEBUG_OPEN=connect:<id>,files,info,editor:<id>,settings`
+    /// Debug builds: `MINI_REMOTE_DEBUG_OPEN=connect:<id>,files,info,editor:<id>,settings,accept-update`
     /// opens screens without clicking, so they can be checked automatically.
     fn debug_startup(&mut self) {
         if !cfg!(debug_assertions) {
@@ -896,6 +922,7 @@ impl App {
                     }
                 }
                 None if item == "settings" => self.show_page(Page::Settings),
+                None if item == "accept-update" => self.debug_accept_update = true,
                 None if item == "find" => self.show_page(Page::Find),
                 None if item == "new" => self.open_editor_new(),
                 Some(("delete", id)) => self.home.confirm_delete = Some(id.to_string()),
@@ -1205,6 +1232,16 @@ impl App {
     }
 
     /// Save what should survive and disconnect everything.
+    /// Download and install the version the update window offers.
+    pub fn start_update(&mut self) {
+        self.updater.start_update(self.runtime.handle(), self.wake.clone());
+    }
+
+    /// "Check now" in Settings.
+    pub fn check_for_updates(&mut self) {
+        self.updater.check(self.runtime.handle(), self.wake.clone(), true);
+    }
+
     pub fn on_exit(&mut self) {
         for i in 0..self.tabs.len() {
             self.save_thumbnail(i, false);

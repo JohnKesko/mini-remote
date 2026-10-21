@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Mini Remote
+GenericName=Remote Desktop
+Comment=See and control a Raspberry Pi screen
+Exec=mini-remote
+Icon=mini-remote
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=Raspberry Pi;Remote;Screen;
+StartupWMClass=mini-remote

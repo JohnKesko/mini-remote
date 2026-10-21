@@ -16,7 +16,10 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 
 target_dir="${CARGO_TARGET_DIR:-$root/target}"
-cargo build --release -p mini-remote
+# Apple Silicon build that runs on macOS 12 (Monterey) and newer.
+export MACOSX_DEPLOYMENT_TARGET=12.0
+cargo build --release -p mini-remote --target aarch64-apple-darwin
+binary="$target_dir/aarch64-apple-darwin/release/mini-remote"
 
 version="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')"
 app="$root/dist/Mini Remote.app"
@@ -25,7 +28,7 @@ staging="$root/dist/.Mini Remote.app.new"
 # Assemble the new app next to the old one, so dist/ never holds a half-built app.
 rm -rf "$staging"
 mkdir -p "$staging/Contents/MacOS" "$staging/Contents/Resources"
-cp "$target_dir/release/mini-remote" "$staging/Contents/MacOS/mini-remote"
+cp "$binary" "$staging/Contents/MacOS/mini-remote"
 sed "s/__VERSION__/$version/g" scripts/macos/Info.plist > "$staging/Contents/Info.plist"
 if [ ! -f assets/AppIcon.icns ]; then
     python3 scripts/macos/make-icon.py

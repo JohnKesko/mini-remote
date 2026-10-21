@@ -11,6 +11,7 @@ pub mod sidebar;
 pub mod theme;
 pub mod toasts;
 pub mod toolbar;
+pub mod update;
 pub mod widgets;
 
 use egui::{Frame, Margin, Ui};
@@ -59,6 +60,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
     let ctx = ui.ctx().clone();
     home::delete_confirmation(app, &ctx);
+    update::dialog(app, &ctx);
     toasts::show(app, &ctx);
     app.after_ui();
 }

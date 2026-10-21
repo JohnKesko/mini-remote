@@ -119,8 +119,16 @@ pub fn screenshot_dir() -> PathBuf {
 
 /// Folder for files copied from the remote computer.
 pub fn download_dir() -> PathBuf {
-    directories::UserDirs::new()
+    let dirs = directories::UserDirs::new();
+    dirs.as_ref()
         .and_then(|d| d.download_dir().map(Path::to_path_buf))
+        // Some Linux systems have no Downloads folder set up; use the home
+        // folder's, or the home folder itself, rather than a temporary one.
+        .or_else(|| {
+            let home = dirs.as_ref()?.home_dir();
+            let downloads = home.join("Downloads");
+            Some(if downloads.is_dir() { downloads } else { home.to_path_buf() })
+        })
         .unwrap_or_else(std::env::temp_dir)
 }
 

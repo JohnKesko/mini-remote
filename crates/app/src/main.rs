@@ -18,6 +18,7 @@ mod session;
 mod storage;
 mod texture;
 mod ui;
+mod updater;
 
 fn main() {
     init_logging();

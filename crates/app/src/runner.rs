@@ -336,6 +336,10 @@ impl State {
                     let _ = self.window.drag_window();
                 }
                 WindowRequest::ToggleZoom => self.window.set_maximized(!self.window.is_maximized()),
+                WindowRequest::Quit => {
+                    self.app.on_exit();
+                    event_loop.exit();
+                }
                 WindowRequest::Size(w, h) => {
                     let _ = self.window.request_inner_size(LogicalSize::new(w, h));
                 }

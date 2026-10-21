@@ -22,7 +22,7 @@ Mini Remote is free and open source (MIT licence).
 
 ## What you need
 
-- A Mac with macOS 12 or newer. Windows and Linux are planned.
+- A Mac with Apple Silicon (M1 or newer) and macOS 12 or newer, **or** a Linux computer: a normal 64-bit PC, or an ARM computer such as a Raspberry Pi with 64-bit Raspberry Pi OS. Ubuntu 22.04, Debian 12 and newer work. Windows isn't supported.
 - A Raspberry Pi running Raspberry Pi OS with the desktop, from late 2023 or newer.
 - Screen sharing turned on on the Pi (see below).
 
@@ -39,21 +39,35 @@ No screen on your Pi? Run `sudo raspi-config` over SSH and choose **Interface Op
 
 ## 2. Install Mini Remote
 
-There is no ready-made download yet, so you build the app yourself. It takes a few minutes.
+Download the newest version from the [Releases page](https://github.com/JohnKesko/mini-remote/releases/latest).
+
+**On a Mac**
+
+1. Download `Mini-Remote-…-macos-arm64.zip` and open it. You get **Mini Remote**.
+2. Drag **Mini Remote** to your **Applications** folder.
+3. The first time, your Mac says it can't check the app, because it isn't from the App Store. Open **System Settings**, then **Privacy & Security**, scroll down and click **Open Anyway**. You only do this once.
+4. When your Mac asks if Mini Remote may find devices on your local network, click **Allow**. Mini Remote needs this to reach your Pi.
+
+**On Linux**
+
+1. Download the file for your computer: `…-linux-x86_64.tar.gz` for a normal PC, or `…-linux-arm64.tar.gz` for an ARM computer such as a Raspberry Pi.
+2. Unpack it, open a terminal in the `mini-remote` folder and run `./install.sh`. Mini Remote then appears in your app menu.
+
+Passwords are remembered in your system's password store (GNOME Keyring or KDE Wallet). Without one, Mini Remote still works but asks for the password each time.
+
+### Updates
+
+Mini Remote checks for a new version each time it starts. When there is one, it shows what's new and asks before doing anything. Choose **Update now** to download it, install it and restart, or **Later**, or **Skip this version**. You can also check in **Settings**, under **About**, or turn the check off there.
+
+Every update is signed by the maintainer. Mini Remote only installs a download whose signature matches, so a changed or fake download is never installed.
+
+### Build it yourself (Mac)
 
 1. Install Rust from [rustup.rs](https://rustup.rs).
 2. Download this project and open a terminal in its folder.
-3. Run:
+3. Run `scripts/macos/bundle.sh`. The app is now in `dist/Mini Remote.app`.
 
-   ```bash
-   scripts/macos/bundle.sh
-   ```
-
-4. The app is now in the `dist` folder: `dist/Mini Remote.app`. Open it from there, or copy it to your **Applications** folder.
-
-To update, run the same command again. It replaces `dist/Mini Remote.app` with the new version, and if the app is open, it closes and reopens it. Your saved connections, settings and passwords are kept.
-
-The first time you open it, your Mac asks if Mini Remote may find devices on your local network. Click **Allow**. Mini Remote needs this to reach your Pi.
+Running the command again replaces it with the new version (and reopens it if it was open). Your saved connections, settings and passwords are kept.
 
 ## 3. Connect to your Pi
 
@@ -157,14 +171,24 @@ The project is split into small parts:
 
 | Folder | What it does |
 | --- | --- |
-| `crates/app` | The Mac app: windows, pages, keyboard and mouse |
+| `crates/app` | The app (Mac and Linux): windows, pages, keyboard and mouse |
 | `crates/rfb` | Talks to the Pi's screen sharing: login, picture updates, clipboard |
 | `crates/codec` | Turns the Pi's picture data into pixels, including H.264 video |
 | `crates/ssh` | Secure remote login: tunnel and file transfer |
 | `crates/discovery` | Finds Pis on the local network |
+| `crates/update` | Checks for, verifies and installs new versions, plus the release signing tool |
 | `test-server` | A pretend Raspberry Pi in Docker, for testing without a real Pi |
 
 Start the pretend Pi with `test-server/start.sh`. It runs the same screen sharing software as a real Pi (wayvnc), but only on your own Mac. The screenshots above were taken with it.
+
+Build the Linux versions (x86_64 and arm64) in Docker with `scripts/linux/build.sh all`. The archives land in `dist/linux`.
+
+### Making a release
+
+1. Raise the version in `Cargo.toml` (for example `0.2.0`), commit and push.
+2. Run `scripts/release.sh`. It builds the Mac and Linux versions, signs every file and publishes them as a GitHub release. Installed copies offer the update on their next start.
+
+Releases are signed with a private key kept outside the project, in `~/.config/mini-remote/release-signing-key`. Make it once with `cargo run -p mini-remote-update --bin mini-remote-release -- keygen`, and put its public key in `crates/update/src/lib.rs`. **Keep a backup of the key and never share it.** Without it, installed copies can't be updated automatically any more.
 
 ## Licence
 

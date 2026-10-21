@@ -124,6 +124,7 @@ pub fn window_chrome(window: &egui_winit::winit::window::Window, fullscreen: boo
 
 /// Debug aid: which view macOS would hand a click at (x, y from the top-left
 /// of the window). Shows whether header buttons under the title bar get clicks.
+#[cfg(debug_assertions)]
 pub fn debug_hit_test(window: &egui_winit::winit::window::Window, x: f64, y: f64) -> String {
     let Some(ns_window) = ns_window(window) else { return "no window".into() };
     let Some(content) = ns_window.contentView() else { return "no content view".into() };

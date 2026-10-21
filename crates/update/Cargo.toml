@@ -1,0 +1,26 @@
+[package]
+name = "mini-remote-update"
+description = "Checks for, verifies and installs new versions of Mini Remote"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "update"
+
+[[bin]]
+name = "mini-remote-release"
+path = "src/bin/mini-remote-release.rs"
+
+[dependencies]
+thiserror.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json = "1"
+ureq = "3"
+ed25519-dalek = "2"
+sha2 = "0.10"
+rand = "0.8"
+flate2 = "1"
+tar = "0.4"
