@@ -29,7 +29,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
     let sidebar = sidebar::mode(app);
     if let Some(mode) = sidebar {
-        let width = if mode == SidebarMode::Rail { sidebar::RAIL_WIDTH } else { sidebar::FULL_WIDTH };
+        let width = if mode == SidebarMode::Rail { sidebar::rail_width(app) } else { sidebar::FULL_WIDTH };
         let margin = if mode == SidebarMode::Rail { 8 } else { 10 };
         egui::Panel::left("sidebar")
             .resizable(false)

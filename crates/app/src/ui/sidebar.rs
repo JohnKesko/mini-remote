@@ -10,7 +10,21 @@ use crate::app::{App, Page};
 use crate::model::SidebarMode;
 
 pub const FULL_WIDTH: f32 = 220.0;
-pub const RAIL_WIDTH: f32 = 60.0;
+/// Narrowest the icon-only side menu gets.
+const RAIL_MIN_WIDTH: f32 = 60.0;
+
+/// Width of the icon-only side menu. On a Mac it is wide enough to hold the
+/// window buttons with an equal gap on both sides, so they never stick out
+/// over the header.
+pub fn rail_width(app: &App) -> f32 {
+    if app.title_bar > 0.0 {
+        let buttons = crate::platform::window_buttons_width();
+        // The buttons start about 19 px from the left edge; mirror that on the right.
+        (buttons + 18.0).max(RAIL_MIN_WIDTH).round()
+    } else {
+        RAIL_MIN_WIDTH
+    }
+}
 const ITEM_HEIGHT: f32 = 36.0;
 /// Centre of the icon column and start of the label column, from the item's left edge.
 const ICON_COLUMN: f32 = 20.0;

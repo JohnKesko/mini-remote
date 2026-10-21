@@ -55,7 +55,7 @@ pub fn show(app: &mut App, ui: &mut Ui, sidebar: Option<SidebarMode>) {
     // Keep clear of the window buttons when the side menu does not cover them.
     let sidebar_width = match sidebar {
         Some(SidebarMode::Full) => super::sidebar::FULL_WIDTH,
-        Some(SidebarMode::Rail) => super::sidebar::RAIL_WIDTH,
+        Some(SidebarMode::Rail) => super::sidebar::rail_width(app),
         _ => 0.0,
     };
     let buttons = if app.title_bar > 0.0 { crate::platform::window_buttons_width() } else { 0.0 };
